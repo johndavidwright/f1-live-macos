@@ -50,3 +50,8 @@ import Testing
 @Test func knownCircuitMap() {
     #expect(CircuitMaps.filename(for: makeRace(start: fixtureDate(10_000))) == "monza-7.svg")
 }
+
+@Test func compactCountdownIncludesHours() {
+    let start = fixtureDate(10_000)
+    #expect(F1Formatting.countdown(to: start.addingTimeInterval(.day + 3 * .hour), from: start, compact: true) == "1d 3h")
+}

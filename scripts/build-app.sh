@@ -7,6 +7,7 @@ output_directory="$project_directory/dist"
 application="$output_directory/F1 Live.app"
 
 cd "$project_directory"
+"$script_directory/generate-icon.sh"
 swift build -c release --arch arm64
 arm64_binary_directory=$(swift build -c release --arch arm64 --show-bin-path)
 swift build -c release --arch x86_64
@@ -21,6 +22,7 @@ lipo -create \
   "$x86_64_binary_directory/F1Live" \
   -output "$application/Contents/MacOS/F1Live"
 cp "$project_directory/Sources/F1Live/Resources/Info.plist" "$application/Contents/Info.plist"
+cp "$project_directory/Sources/F1Live/Resources/AppIcon.icns" "$application/Contents/Resources/AppIcon.icns"
 cp "$project_directory/Sources/F1Live/Resources/Circuits/"*.svg "$application/Contents/Resources/Circuits/"
 chmod 755 "$application/Contents/MacOS/F1Live"
 

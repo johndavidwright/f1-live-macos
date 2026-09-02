@@ -1,0 +1,26 @@
+name: macOS CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: swift --version
+      - name: Run Swift Testing suite
+        run: swift test --enable-swift-testing --disable-xctest -Xswiftc -warnings-as-errors
+      - name: Run deterministic app self-tests
+        run: swift run --skip-build F1Live --self-test
+      - name: Build universal app
+        run: ./scripts/build-app.sh
+      - name: Verify architectures and signature
+        run: |
+          lipo "dist/F1 Live.app/Contents/MacOS/F1Live" -verify_arch arm64 x86_64
+          codesign --verify --deep --strict --verbose=2 "dist/F1 Live.app"

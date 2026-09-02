@@ -32,9 +32,17 @@ To install it for the current user and launch it:
 ./scripts/install.sh
 ```
 
+To create the versioned friends-and-family ZIP and SHA-256 checksum:
+
+```sh
+./scripts/package-release.sh
+```
+
 That installs the app at `~/Applications/F1 Live.app`. The app is menu-bar-only, so it does not appear in the Dock. Open its gear button to choose favorite drivers or change the time format, refresh cadence, and notification rules. The single-page race view always shows the top five; favorite rows are highlighted, and selected drivers outside the top five are appended to the standings.
 
-For development, `swift run F1Live` also works from the repository root. Run the deterministic model checks plus a live API smoke test with `./scripts/test.sh`. A Swift Testing suite is also included for Xcode and complete developer-tool installations.
+For development, `swift run F1Live` also works from the repository root. Run the deterministic model checks and a live API smoke test with `./scripts/test.sh`. The Swift Testing suite runs through `swift test` with a full Xcode installation and in the included GitHub Actions workflow; Command Line Tools alone can compile that suite but does not include Apple's test-bundle runner.
+
+This preview release is ad-hoc signed rather than notarized. See [INSTALL.md](INSTALL.md) for the one-time macOS approval flow.
 
 ## Data and privacy
 
