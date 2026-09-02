@@ -1,0 +1,43 @@
+name: Publish Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify tag matches app version
+        run: |
+          version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Sources/F1Live/Resources/Info.plist)
+          test "v$version" = "$GITHUB_REF_NAME"
+      - name: Test
+        run: |
+          swift test --enable-swift-testing --disable-xctest -Xswiftc -warnings-as-errors
+          swift run --skip-build F1Live --self-test
+      - name: Package universal app
+        run: ./scripts/package-release.sh
+      - name: Generate signed appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          test -n "$SPARKLE_PRIVATE_KEY"
+          ./scripts/generate-appcast.sh
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/F1-Live-$version-macOS-universal.zip" \
+            "dist/F1-Live-$version-macOS-universal.zip.sha256" \
+            "dist/F1-Live-$version-update.zip" \
+            "dist/appcast.xml" \
+            --title "F1 Live $version" \
+            --notes-file RELEASE_NOTES.md

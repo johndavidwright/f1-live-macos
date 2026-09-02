@@ -46,7 +46,11 @@ enum EntryPoint {
             previewDefaults.set(false, forKey: "notifications")
             let settings = SettingsStore(defaults: previewDefaults)
             let store = AppStore(settings: settings)
-            let view = DashboardView().environmentObject(store).environmentObject(settings)
+            let updates = UpdateController()
+            let view = DashboardView()
+                .environmentObject(store)
+                .environmentObject(settings)
+                .environmentObject(updates)
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: DashboardView.windowWidth, height: DashboardView.windowHeight),
                 styleMask: [.titled, .closable, .miniaturizable],

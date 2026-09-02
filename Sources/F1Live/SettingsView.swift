@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var settings: SettingsStore
+    @EnvironmentObject private var updates: UpdateController
 
     var body: some View {
         Form {
@@ -12,6 +13,33 @@ struct SettingsView: View {
                     Text("12-hour").tag(true)
                 }
                 Toggle("Switch to live timing when a race starts", isOn: $settings.autoLive)
+            }
+
+            Section("Updates") {
+                Toggle(
+                    "Automatically check for updates",
+                    isOn: Binding(
+                        get: { updates.automaticallyChecksForUpdates },
+                        set: { updates.setAutomaticallyChecksForUpdates($0) }
+                    )
+                )
+                Toggle(
+                    "Automatically download and install updates",
+                    isOn: Binding(
+                        get: { updates.automaticallyDownloadsUpdates },
+                        set: { updates.setAutomaticallyDownloadsUpdates($0) }
+                    )
+                )
+                .disabled(!updates.allowsAutomaticUpdates)
+
+                HStack {
+                    Button("Check for Updates…") { updates.checkForUpdates() }
+                        .disabled(!updates.canCheckForUpdates)
+                    Spacer()
+                    Text(updates.versionText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section {

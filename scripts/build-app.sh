@@ -16,12 +16,15 @@ x86_64_binary_directory=$(swift build -c release --arch x86_64 --show-bin-path)
 if [ -d "$application" ]; then
   rm -rf "$application"
 fi
-mkdir -p "$application/Contents/MacOS" "$application/Contents/Resources/Circuits"
+mkdir -p "$application/Contents/MacOS" "$application/Contents/Frameworks" "$application/Contents/Resources/Circuits"
 lipo -create \
   "$arm64_binary_directory/F1Live" \
   "$x86_64_binary_directory/F1Live" \
   -output "$application/Contents/MacOS/F1Live"
 cp "$project_directory/Sources/F1Live/Resources/Info.plist" "$application/Contents/Info.plist"
+ditto "$arm64_binary_directory/Sparkle.framework" "$application/Contents/Frameworks/Sparkle.framework"
+cp "$project_directory/.build/checkouts/Sparkle/LICENSE" "$application/Contents/Resources/Sparkle-LICENSE.txt"
+cp "$project_directory/ATTRIBUTIONS.md" "$application/Contents/Resources/ATTRIBUTIONS.md"
 cp "$project_directory/Sources/F1Live/Resources/AppIcon.icns" "$application/Contents/Resources/AppIcon.icns"
 cp "$project_directory/Sources/F1Live/Resources/Circuits/"*.svg "$application/Contents/Resources/Circuits/"
 chmod 755 "$application/Contents/MacOS/F1Live"
@@ -31,4 +34,6 @@ if command -v codesign >/dev/null 2>&1; then
 fi
 
 lipo "$application/Contents/MacOS/F1Live" -verify_arch arm64 x86_64
+codesign --verify --deep --strict --verbose=2 "$application"
+"$application/Contents/MacOS/F1Live" --self-test
 printf 'Built %s\n' "$application"

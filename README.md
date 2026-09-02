@@ -10,39 +10,20 @@ A native macOS menu-bar port of [marconn01/live-f1](https://github.com/marconn01
 - OpenF1 live timing tower with positions, intervals, gaps, laps, pit-stop counts, and race-control status
 - Offline fallback from `~/Library/Caches/F1Live`
 - Native macOS notifications and a settings window
-- No API key, third-party package, or background helper required
+- Secure in-app update checks with optional automatic download and installation
+- No API key required
 
 ## Requirements
 
 - macOS 14 Sonoma or later
-- Apple Command Line Tools or Xcode with Swift 6
 
-## Build and run
+## Download and install
 
-```sh
-./scripts/build-app.sh
-open "dist/F1 Live.app"
-```
-
-The build script produces one universal app containing native Apple-silicon and Intel executables.
-
-To install it for the current user and launch it:
-
-```sh
-./scripts/install.sh
-```
-
-To create the versioned friends-and-family ZIP and SHA-256 checksum:
-
-```sh
-./scripts/package-release.sh
-```
-
-That installs the app at `~/Applications/F1 Live.app`. The app is menu-bar-only, so it does not appear in the Dock. Open its gear button to choose favorite drivers or change the time format, refresh cadence, and notification rules. The single-page race view always shows the top five; favorite rows are highlighted, and selected drivers outside the top five are appended to the standings.
-
-For development, `swift run F1Live` also works from the repository root. Run the deterministic model checks and a live API smoke test with `./scripts/test.sh`. The Swift Testing suite runs through `swift test` with a full Xcode installation and in the included GitHub Actions workflow; Command Line Tools alone can compile that suite but does not include Apple's test-bundle runner.
+Download the newest universal ZIP from [GitHub Releases](https://github.com/johndavidwright/f1-live-macos/releases/latest), then follow [INSTALL.md](INSTALL.md). The app is menu-bar-only, so it does not appear in the Dock. Open its gear button to choose favorite drivers, configure updates, or change the time format, refresh cadence, and notification rules.
 
 This preview release is ad-hoc signed rather than notarized. See [INSTALL.md](INSTALL.md) for the one-time macOS approval flow.
+
+Development and release commands are documented separately in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Data and privacy
 
@@ -50,6 +31,6 @@ F1 Live connects only to the public, keyless [Jolpica-F1](https://jolpi.ca/) and
 
 ## Attribution and license
 
-The application logic is a macOS port of `live-f1` and is distributed under its MIT license; see [LICENSE](LICENSE). Circuit maps are by [Jules Roy](https://github.com/julesr0y/f1-circuits-svg), licensed under CC BY 4.0; see [CIRCUITS-LICENSE.txt](CIRCUITS-LICENSE.txt) and [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+The application logic is a macOS port of `live-f1` and is distributed under its MIT license; see [LICENSE](LICENSE). Circuit maps are by [Jules Roy](https://github.com/julesr0y/f1-circuits-svg), licensed under CC BY 4.0. In-app updates use the MIT-licensed [Sparkle](https://sparkle-project.org/) framework. See [ATTRIBUTIONS.md](ATTRIBUTIONS.md) for complete attribution details.
 
 Formula 1 data comes from public APIs. This project is unofficial and is not associated with or endorsed by Formula 1.

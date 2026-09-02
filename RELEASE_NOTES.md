@@ -1,15 +1,15 @@
-# F1 Live 0.1.0
+# F1 Live 0.2.0
 
 Friends-and-family preview release.
 
 ## Highlights
 
-- Native macOS menu-bar dashboard for race weekends, upcoming races, and driver standings.
-- Local-time session countdowns and bundled circuit maps.
-- Top-five standings with configurable highlighted favorite drivers.
-- Lewis Hamilton selected as the first-run favorite.
-- OpenF1 live timing and configurable session notifications.
-- Universal support for Apple-silicon and Intel Macs running macOS 14 or later.
+- Adds **Check for Updates…** to the dashboard and settings.
+- Adds settings for automatic update checks and automatic download and installation.
+- Verifies every in-app update using a dedicated Sparkle EdDSA signing key.
+- Preserves the universal Apple-silicon and Intel build and all existing race-dashboard features.
+
+This is the first updater-enabled release, so it must be installed manually. Future releases can update directly inside F1 Live.
 
 ## Known limitation
 

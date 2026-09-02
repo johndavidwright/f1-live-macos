@@ -11,11 +11,13 @@ struct F1LiveApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var settings: SettingsStore
     @StateObject private var store: AppStore
+    @StateObject private var updates: UpdateController
 
     init() {
         let settings = SettingsStore()
         _settings = StateObject(wrappedValue: settings)
         _store = StateObject(wrappedValue: AppStore(settings: settings))
+        _updates = StateObject(wrappedValue: UpdateController())
     }
 
     var body: some Scene {
@@ -23,6 +25,7 @@ struct F1LiveApp: App {
             DashboardView()
                 .environmentObject(store)
                 .environmentObject(settings)
+                .environmentObject(updates)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: store.activeFeedSession != nil ? "flag.checkered.2.crossed" : "stopwatch")
@@ -40,7 +43,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     static let shared = SettingsWindowController()
     private var window: NSWindow?
 
-    func show(store: AppStore, settings: SettingsStore) {
+    func show(store: AppStore, settings: SettingsStore, updates: UpdateController) {
         let sourceWindow = NSApp.keyWindow
         let sourceScreen = sourceWindow?.screen ?? NSScreen.main
 
@@ -49,11 +52,11 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
-            self?.present(store: store, settings: settings, on: sourceScreen)
+            self?.present(store: store, settings: settings, updates: updates, on: sourceScreen)
         }
     }
 
-    private func present(store: AppStore, settings: SettingsStore, on screen: NSScreen?) {
+    private func present(store: AppStore, settings: SettingsStore, updates: UpdateController, on screen: NSScreen?) {
         let settingsWindow: NSWindow
         if let window {
             settingsWindow = window
@@ -61,6 +64,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             let view = SettingsView()
                 .environmentObject(store)
                 .environmentObject(settings)
+                .environmentObject(updates)
             let created = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: 520, height: 680),
                 styleMask: [.titled, .closable, .miniaturizable],

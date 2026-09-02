@@ -2,6 +2,8 @@ name: macOS CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 permissions:
@@ -11,7 +13,7 @@ jobs:
   test-and-build:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Show toolchain
         run: swift --version
       - name: Run Swift Testing suite

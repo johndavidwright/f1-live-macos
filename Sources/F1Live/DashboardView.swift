@@ -7,6 +7,7 @@ struct DashboardView: View {
 
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var settings: SettingsStore
+    @EnvironmentObject private var updates: UpdateController
 
     var body: some View {
         VStack(spacing: 0) {
@@ -102,7 +103,15 @@ struct DashboardView: View {
             .buttonStyle(.plain)
             .help("Refresh (R)")
             Button {
-                SettingsWindowController.shared.show(store: store, settings: settings)
+                updates.checkForUpdates()
+            } label: {
+                Image(systemName: "arrow.down.circle")
+            }
+            .buttonStyle(.plain)
+            .disabled(!updates.canCheckForUpdates)
+            .help("Check for Updates…")
+            Button {
+                SettingsWindowController.shared.show(store: store, settings: settings, updates: updates)
             } label: {
                 Image(systemName: "gearshape")
             }

@@ -8,10 +8,22 @@ let package = Package(
     products: [
         .executable(name: "F1Live", targets: ["F1Live"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.9.6")
+    ],
     targets: [
         .executableTarget(
             name: "F1Live",
-            exclude: ["Resources"]
+            dependencies: [
+                .product(name: "Sparkle", package: "Sparkle")
+            ],
+            exclude: ["Resources"],
+            linkerSettings: [
+                .unsafeFlags([
+                    "-Xlinker", "-rpath",
+                    "-Xlinker", "@executable_path/../Frameworks"
+                ])
+            ]
         ),
         .testTarget(
             name: "F1LiveTests",
