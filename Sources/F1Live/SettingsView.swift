@@ -115,22 +115,14 @@ struct SettingsView: View {
                 Stepper("Calendar and standings: every \(settings.refreshMinutes) minutes", value: $settings.refreshMinutes, in: 5...720, step: 5)
             }
 
-            Section("Notifications") {
-                Toggle("Session notifications", isOn: $settings.notifications)
-                TextField("Minutes before", text: $settings.notifyLeadMinutes)
-                    .disabled(!settings.notifications)
-                    .help("Comma-separated values, such as 60,30,15")
-                Grid(alignment: .leading) {
-                    GridRow {
-                        Toggle("Race", isOn: $settings.notifyRace)
-                        Toggle("Qualifying", isOn: $settings.notifyQualifying)
-                    }
-                    GridRow {
-                        Toggle("Sprint", isOn: $settings.notifySprint)
-                        Toggle("Practice", isOn: $settings.notifyPractice)
-                    }
-                }
-                .disabled(!settings.notifications)
+            NotificationSettingsSection(controller: store.notificationController)
+
+            Section {
+                Link("Report a Bug…", destination: SupportLinks.bugReport)
+            } header: {
+                Text("Help")
+            } footer: {
+                Text("Opens a GitHub draft with your app and macOS versions. No logs are attached, and nothing is submitted automatically.")
             }
 
             Section {
@@ -142,8 +134,10 @@ struct SettingsView: View {
         .frame(width: 520, height: 680)
         .navigationTitle("F1 Live Settings")
         .onAppear { loginItem.refreshStatus() }
+        .task { await store.refreshNotificationStatus() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             loginItem.refreshStatus()
+            Task { await store.refreshNotificationStatus() }
         }
     }
 

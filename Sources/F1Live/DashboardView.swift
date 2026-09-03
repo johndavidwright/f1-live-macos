@@ -239,6 +239,15 @@ private struct LiveTimingView: View {
                     }
                 }
 
+                if !store.live.rows.isEmpty, let warning = store.liveWarning {
+                    Label(warning, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(10)
+                        .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+                }
+
                 if store.live.rows.isEmpty {
                     VStack(spacing: 12) {
                         if store.isPollingLive { ProgressView() }
@@ -246,7 +255,7 @@ private struct LiveTimingView: View {
                         Text("Waiting for live timing data…").font(.headline.monospaced())
                         Text("OpenF1 begins publishing shortly before the session starts.")
                             .font(.caption).foregroundStyle(.secondary)
-                        if let error = store.liveError { Text(error).font(.caption).foregroundStyle(.orange) }
+                        if let warning = store.liveWarning { Text(warning).font(.caption).foregroundStyle(.orange) }
                     }
                     .frame(maxWidth: .infinity, minHeight: 430)
                 } else {
@@ -261,8 +270,8 @@ private struct LiveTimingView: View {
                         ForEach(store.live.rows) { LiveTimingRowView(row: $0) }
                     }
                     HStack {
-                        Circle().fill(store.liveError == nil ? .red : .orange).frame(width: 7, height: 7)
-                        Text(store.liveError ?? "Live · updated \(F1Formatting.ago(store.live.lastUpdateAt, now: store.now))")
+                        Circle().fill(store.liveWarning == nil ? .red : .orange).frame(width: 7, height: 7)
+                        Text(store.liveWarning ?? "Live · updated \(F1Formatting.ago(store.live.lastUpdateAt, now: store.now))")
                         Spacer()
                         if store.isPollingLive { ProgressView().controlSize(.mini) }
                     }

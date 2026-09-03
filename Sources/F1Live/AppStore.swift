@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import Foundation
-import UserNotifications
 
 @MainActor
 final class SettingsStore: ObservableObject {
@@ -28,7 +27,7 @@ final class SettingsStore: ObservableObject {
         autoLive = defaults.object(forKey: "autoLive") as? Bool ?? true
         liveRefreshSeconds = defaults.object(forKey: "liveRefreshSeconds") as? Int ?? 12
         refreshMinutes = defaults.object(forKey: "refreshMinutes") as? Int ?? 15
-        notifications = defaults.object(forKey: "notifications") as? Bool ?? true
+        notifications = defaults.object(forKey: "notifications") as? Bool ?? false
         notifyLeadMinutes = defaults.string(forKey: "notifyLeadMinutes") ?? "30,15"
         notifyRace = defaults.object(forKey: "notifyRace") as? Bool ?? true
         notifyQualifying = defaults.object(forKey: "notifyQualifying") as? Bool ?? true
@@ -46,6 +45,13 @@ final class SettingsStore: ObservableObject {
     var leadMinutes: [Int] {
         notifyLeadMinutes.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
             .filter { (1...1_440).contains($0) }.uniqued().sorted(by: >)
+    }
+
+    func applyNotificationDefaultIfNeeded(authorized: Bool) {
+        guard defaults.object(forKey: "notifications") == nil else { return }
+        // Preserve the old default-on behavior for users who already allowed
+        // notifications, without opting new or previously denied users in.
+        notifications = authorized
     }
 
     func includes(_ session: RaceSession) -> Bool {
@@ -100,6 +106,7 @@ final class AppStore: ObservableObject {
     @Published var liveMode = false
 
     let settings: SettingsStore
+    let notificationController: NotificationController
     private let api: F1API
     private var started = false
     private var manualLiveChoice = false
@@ -108,10 +115,12 @@ final class AppStore: ObservableObject {
     private var liveTask: Task<Void, Never>?
     private var settingsSubscriptions: Set<AnyCancellable> = []
     private var lastRaceID: String?
+    private var liveSessionKey: Int?
 
     init(settings: SettingsStore, api: F1API = F1API()) {
         self.settings = settings
         self.api = api
+        notificationController = NotificationController(settings: settings)
         settings.objectWillChange
             .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
             .sink { [weak self] in self?.settingsDidChange() }
@@ -129,6 +138,7 @@ final class AppStore: ObservableObject {
         started = true
         refreshTask = Task { [weak self] in
             guard let self else { return }
+            await self.notificationController.refreshStatus()
             await self.refresh(force: false)
             while !Task.isCancelled {
                 let minutes = max(5, self.settings.refreshMinutes)
@@ -164,11 +174,12 @@ final class AppStore: ObservableObject {
             if raceChanged {
                 lastRaceID = fresh.race?.id
                 live = LiveTimingState()
+                liveSessionKey = nil
                 liveError = nil
                 manualLiveChoice = false
             }
             applyAutoLive()
-            if settings.notifications { await NotificationScheduler.schedule(data: fresh, settings: settings, now: now) }
+            if settings.notifications { await notificationController.schedule(data: fresh, now: now) }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -189,6 +200,9 @@ final class AppStore: ObservableObject {
     var race: Race? { data?.race }
     var weekend: WeekendStatus { race?.weekendStatus(at: now) ?? WeekendStatus(label: "FORMULA 1", kind: .idle, session: nil) }
     var activeFeedSession: RaceSession? { race?.liveFeedSession(at: now) }
+    var liveWarning: String? {
+        liveError ?? live.freshnessWarning(at: now, refreshSeconds: settings.liveRefreshSeconds)
+    }
     var menuBarTitle: String {
         if race?.liveFeedSession(at: now) != nil { return "F1 LIVE" }
         if let next = race?.nextSession(at: now) { return "F1 \(F1Formatting.countdown(to: next.startAt, from: now, compact: true))" }
@@ -218,7 +232,15 @@ final class AppStore: ObservableObject {
 
     private func tick() {
         now = Date()
+        synchronizeLiveSession()
         applyAutoLive()
+    }
+
+    private func synchronizeLiveSession() {
+        guard let key = activeFeedSession?.sessionKey, liveSessionKey != key else { return }
+        liveSessionKey = key
+        live = LiveTimingState()
+        liveError = nil
     }
 
     private func applyAutoLive() {
@@ -236,72 +258,33 @@ final class AppStore: ObservableObject {
             }
         }
         if settings.notifications, let data {
-            Task { await NotificationScheduler.schedule(data: data, settings: settings, now: now) }
+            Task { await notificationController.schedule(data: data, now: now) }
         } else if !settings.notifications {
-            NotificationScheduler.clear()
+            notificationController.clear()
         }
+    }
+
+    func refreshNotificationStatus() async {
+        await notificationController.refreshStatus()
+        if let data { await notificationController.schedule(data: data, now: now) }
     }
 
     private func pollLiveIfNeeded(force: Bool = false) async {
         guard liveMode, let session = activeFeedSession, let key = session.sessionKey, !isPollingLive else { return }
+        synchronizeLiveSession()
         if !force, let last = live.lastPollAt, now.timeIntervalSince(last) < TimeInterval(max(5, settings.liveRefreshSeconds) - 1) { return }
         isPollingLive = true
         defer { isPollingLive = false }
-        let includeSlow = live.drivers.isEmpty || live.lastPollAt == nil || now.timeIntervalSince(live.lastPollAt!) >= 55
+        let includeSlow = force || live.needsDetailRefresh(at: now)
         do {
             let batch = try await api.loadLive(sessionKey: key, refreshSeconds: settings.liveRefreshSeconds, currentLap: live.currentLap, includeSlow: includeSlow, now: now)
-            live.merge(batch, polledAt: Date())
-            liveError = live.consecutiveEmptyPolls >= 3 ? "No timing data in the last few polls." : nil
+            guard !Task.isCancelled, liveSessionKey == key, activeFeedSession?.sessionKey == key else { return }
+            live.merge(batch, polledAt: Date(), includedDetails: includeSlow)
+            liveError = nil
         } catch {
+            guard !Task.isCancelled, liveSessionKey == key, activeFeedSession?.sessionKey == key else { return }
             liveError = error.localizedDescription
         }
-    }
-}
-
-enum NotificationScheduler {
-    private static var hasApplicationBundle: Bool {
-        Bundle.main.bundleURL.pathExtension == "app" && Bundle.main.bundleIdentifier != nil
-    }
-
-    @MainActor
-    static func schedule(data: DashboardData, settings: SettingsStore, now: Date) async {
-        guard hasApplicationBundle else { return }
-        let center = UNUserNotificationCenter.current()
-        let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
-        guard granted else { return }
-        center.removeAllPendingNotificationRequests()
-
-        let sessions = ([data.race].compactMap { $0 } + data.upcoming).flatMap(\.sessions)
-            .filter { $0.startAt > now && settings.includes($0) }
-        var requests: [(String, Date, String, String)] = []
-        for session in sessions {
-            for lead in settings.leadMinutes {
-                let fireAt = session.startAt.addingTimeInterval(-TimeInterval(lead) * .minute)
-                if fireAt > now {
-                    requests.append(("\(session.id)-lead-\(lead)-\(Int(session.startAt.timeIntervalSince1970))", fireAt, "\(session.name) in \(lead) minutes", "Get ready for the next Formula 1 session."))
-                }
-            }
-            requests.append(("\(session.id)-start-\(Int(session.startAt.timeIntervalSince1970))", session.startAt, "\(session.name) is starting", "Open F1 Live from the menu bar for the latest session status."))
-            if session.endAt > now {
-                requests.append(("\(session.id)-end-\(Int(session.endAt.timeIntervalSince1970))", session.endAt, "\(session.name) scheduled finish", "Results and standings will refresh automatically."))
-            }
-        }
-
-        for request in requests.sorted(by: { $0.1 < $1.1 }).prefix(60) {
-            let content = UNMutableNotificationContent()
-            content.title = request.2
-            content.body = request.3
-            content.sound = .default
-            let interval = request.1.timeIntervalSince(now)
-            guard interval > 1 else { continue }
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
-            try? await center.add(UNNotificationRequest(identifier: "f1live.\(request.0)", content: content, trigger: trigger))
-        }
-    }
-
-    static func clear() {
-        guard hasApplicationBundle else { return }
-        UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
     }
 }
 

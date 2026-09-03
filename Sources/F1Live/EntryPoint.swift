@@ -8,8 +8,8 @@ enum EntryPoint {
     static func main() async {
         if CommandLine.arguments.contains("--self-test") {
             do {
-                try SelfTests.run()
-                print("Self-tests passed (9 app scenarios; 8 login-item scenarios).")
+                try await SelfTests.run()
+                print("Self-tests passed (core, login items, live timing, notifications, and support links).")
             } catch {
                 fputs("Self-test failed: \(error)\n", stderr)
                 Foundation.exit(1)
@@ -80,7 +80,7 @@ enum SelfTestError: Error, CustomStringConvertible {
 
 @MainActor
 enum SelfTests {
-    static func run() throws {
+    static func run() async throws {
         let start = Date(timeIntervalSince1970: 10_000)
         let session = RaceSession(key: "race", shortName: "RACE", name: "Race", group: "Race", startAt: start, endAt: start.addingTimeInterval(100), dateOnly: false, exactEnd: true, sessionKey: 42)
         try check(session.state(at: start.addingTimeInterval(-3_601)) == .upcoming, "far-future session state")
@@ -134,6 +134,8 @@ enum SelfTests {
         freshDefaults.removePersistentDomain(forName: freshSuiteName)
 
         try LoginItemSelfTests.run()
+        try LiveTimingSelfTests.run()
+        try await NotificationSelfTests.run()
     }
 
     private static func check(_ condition: @autoclosure () -> Bool, _ label: String) throws {

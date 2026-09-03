@@ -59,3 +59,13 @@ import Testing
 @Test @MainActor func loginItemSettingsFollowSystemState() throws {
     try LoginItemSelfTests.run()
 }
+
+@Test func liveDetailsKeepRefreshing() throws { try LiveTimingSelfTests.detailRefreshCadence() }
+@Test func liveFeedDetectsEmptyAndRepeatedResponses() throws { try LiveTimingSelfTests.emptyAndRepeatedResponses() }
+@Test func liveFeedHandlesTimestamps() throws { try LiveTimingSelfTests.timestampHandling() }
+@Test @MainActor func notificationsRequireOptIn() async throws { try await NotificationSelfTests.firstUseAndOptIn() }
+@Test @MainActor func notificationsReflectSystemPermissions() async throws { try await NotificationSelfTests.deniedAndExternalChanges() }
+@Test @MainActor func notificationsPreserveExistingPreferences() async throws { try await NotificationSelfTests.existingPreferences() }
+@Test @MainActor func notificationErrorsAndUnbundledExecution() async throws { try await NotificationSelfTests.errorsAndUnbundledExecution() }
+@Test @MainActor func notificationCancellationAndReplacement() async throws { try await NotificationSelfTests.cancelledAndOverlappingSchedules() }
+@Test @MainActor func reminderPlanAndSupportLink() throws { try NotificationSelfTests.reminderPlanAndBugReport() }

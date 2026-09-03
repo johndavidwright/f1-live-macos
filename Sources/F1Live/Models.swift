@@ -237,7 +237,27 @@ struct LiveTimingState: Sendable {
     var status = RaceControlStatus.running
     var lastUpdateAt: Date?
     var lastPollAt: Date?
+    var lastDetailPollAt: Date?
     var consecutiveEmptyPolls = 0
+
+    func needsDetailRefresh(at now: Date) -> Bool {
+        guard !drivers.isEmpty, let lastDetailPollAt else { return true }
+        return now.timeIntervalSince(lastDetailPollAt) >= 55
+    }
+
+    func freshnessWarning(at now: Date, refreshSeconds: Int) -> String? {
+        if consecutiveEmptyPolls >= 3 {
+            return "Timing delayed · no data in the last few polls."
+        }
+        guard !positions.isEmpty else { return nil }
+        guard let lastUpdateAt else {
+            return "Timing freshness unknown · timestamps unavailable."
+        }
+        if now.timeIntervalSince(lastUpdateAt) >= TimeInterval(max(60, refreshSeconds * 3)) {
+            return "Timing delayed · last data \(F1Formatting.ago(lastUpdateAt, now: now))."
+        }
+        return nil
+    }
 
     var rows: [LiveRow] {
         positions.values.compactMap { item -> LiveRow? in
@@ -255,18 +275,18 @@ struct LiveTimingState: Sendable {
                 interval: Self.gapText(split?.interval, leader: item.position == 1),
                 gapToLeader: Self.gapText(split?.gapToLeader, leader: item.position == 1),
                 pitStops: pit.count,
-                updatedAt: split?.at ?? item.at
+                updatedAt: [split?.at, item.at].compactMap { $0 }.max()
             )
         }.sorted { $0.position < $1.position }
     }
 
-    mutating func merge(_ batch: LiveBatch, polledAt: Date) {
+    mutating func merge(_ batch: LiveBatch, polledAt: Date, includedDetails: Bool = false) {
         for item in batch.positions {
-            if let old = positions[item.driverNumber], let oldAt = old.at, let newAt = item.at, newAt < oldAt { continue }
+            if let oldAt = positions[item.driverNumber]?.at, item.at == nil || item.at! < oldAt { continue }
             positions[item.driverNumber] = item
         }
         for item in batch.intervals {
-            if let old = intervals[item.driverNumber], let oldAt = old.at, let newAt = item.at, newAt < oldAt { continue }
+            if let oldAt = intervals[item.driverNumber]?.at, item.at == nil || item.at! < oldAt { continue }
             intervals[item.driverNumber] = item
         }
         if let incoming = batch.drivers, !incoming.isEmpty { drivers = incoming }
@@ -274,10 +294,14 @@ struct LiveTimingState: Sendable {
         if let lap = batch.currentLap { currentLap = max(currentLap, lap) }
         if let control = batch.raceControl { status = control }
         lastPollAt = polledAt
+        if includedDetails { lastDetailPollAt = polledAt }
 
-        let newest = rows.compactMap(\.updatedAt).max() ?? (rows.isEmpty ? nil : polledAt)
+        // A successful request is not proof of fresh data: overlapping query
+        // windows can keep returning the same old rows, or an empty response.
+        let newest = (positions.values.compactMap(\.at) + intervals.values.compactMap(\.at)).max()
         if let newest { lastUpdateAt = max(lastUpdateAt ?? .distantPast, newest) }
-        if rows.isEmpty { consecutiveEmptyPolls += 1 } else { consecutiveEmptyPolls = 0 }
+        if batch.positions.isEmpty && batch.intervals.isEmpty { consecutiveEmptyPolls += 1 }
+        else { consecutiveEmptyPolls = 0 }
     }
 
     static func gapText(_ raw: String?, leader: Bool) -> String {
