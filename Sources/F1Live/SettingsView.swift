@@ -4,9 +4,34 @@ struct SettingsView: View {
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var updates: UpdateController
+    @StateObject private var loginItem = LoginItemController()
 
     var body: some View {
         Form {
+            Section {
+                Toggle(
+                    "Open at Login",
+                    isOn: Binding(
+                        get: { loginItem.isEnabled },
+                        set: { loginItem.setEnabled($0) }
+                    )
+                )
+                .disabled(!loginItem.isAvailable)
+
+                if loginItem.requiresApproval {
+                    Button("Open Login Items Settings…") { loginItem.openSystemSettings() }
+                }
+                if let errorMessage = loginItem.errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            } header: {
+                Text("General")
+            } footer: {
+                Text(loginItem.statusMessage)
+            }
+
             Section("Display") {
                 Picker("Time format", selection: $settings.useTwelveHourTime) {
                     Text("24-hour").tag(false)
@@ -116,6 +141,10 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 520, height: 680)
         .navigationTitle("F1 Live Settings")
+        .onAppear { loginItem.refreshStatus() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            loginItem.refreshStatus()
+        }
     }
 
     private func favoriteBinding(for driver: DriverStanding) -> Binding<Bool> {

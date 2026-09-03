@@ -55,3 +55,7 @@ import Testing
     let start = fixtureDate(10_000)
     #expect(F1Formatting.countdown(to: start.addingTimeInterval(.day + 3 * .hour), from: start, compact: true) == "1d 3h")
 }
+
+@Test @MainActor func loginItemSettingsFollowSystemState() throws {
+    try LoginItemSelfTests.run()
+}

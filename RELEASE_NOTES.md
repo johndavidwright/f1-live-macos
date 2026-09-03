@@ -1,15 +1,15 @@
-# F1 Live 0.2.0
+# F1 Live 0.2.1
 
-Friends-and-family preview release.
+Preview release for macOS 14 or later, supporting Apple-silicon and Intel Macs.
 
 ## Highlights
 
-- Adds **Check for Updates…** to the dashboard and settings.
-- Adds settings for automatic update checks and automatic download and installation.
-- Verifies every in-app update using a dedicated Sparkle EdDSA signing key.
-- Preserves the universal Apple-silicon and Intel build and all existing race-dashboard features.
+- Adds **Open at Login** under **Settings → General** so F1 Live can start in your menu bar when you sign in.
+- Leaves Open at Login off by default and preserves existing macOS login-item preferences.
+- Reflects changes made in System Settings and provides guidance when macOS needs approval.
+- Adds automated checks for login-item registration, removal, approval, and error handling.
 
-This is the first updater-enabled release, so it must be installed manually. Future releases can update directly inside F1 Live.
+If you have version 0.2.0, choose **Check for Updates…** in F1 Live to download and install this release. New users and users on 0.1.0 can install the universal ZIP using `INSTALL.md`.
 
 ## Known limitation
 

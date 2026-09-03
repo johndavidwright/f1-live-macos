@@ -9,7 +9,7 @@ enum EntryPoint {
         if CommandLine.arguments.contains("--self-test") {
             do {
                 try SelfTests.run()
-                print("Self-tests passed (9 scenarios).")
+                print("Self-tests passed (9 app scenarios; 8 login-item scenarios).")
             } catch {
                 fputs("Self-test failed: \(error)\n", stderr)
                 Foundation.exit(1)
@@ -132,6 +132,8 @@ enum SelfTests {
         freshSettings.migrateLegacyFavoriteIfNeeded(from: drivers)
         try check(freshSettings.favoriteDriverIDs == Set(["hamilton"]), "Lewis Hamilton is the first-run favorite")
         freshDefaults.removePersistentDomain(forName: freshSuiteName)
+
+        try LoginItemSelfTests.run()
     }
 
     private static func check(_ condition: @autoclosure () -> Bool, _ label: String) throws {

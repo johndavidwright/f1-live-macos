@@ -10,6 +10,7 @@ A native macOS menu-bar port of [marconn01/live-f1](https://github.com/marconn01
 - OpenF1 live timing tower with positions, intervals, gaps, laps, pit-stop counts, and race-control status
 - Offline fallback from `~/Library/Caches/F1Live`
 - Native macOS notifications and a settings window
+- Optional Open at Login setting to start the menu-bar app when you sign in
 - Secure in-app update checks with optional automatic download and installation
 - No API key required
 
@@ -19,7 +20,7 @@ A native macOS menu-bar port of [marconn01/live-f1](https://github.com/marconn01
 
 ## Download and install
 
-Download the newest universal ZIP from [GitHub Releases](https://github.com/johndavidwright/f1-live-macos/releases/latest), then follow [INSTALL.md](INSTALL.md). The app is menu-bar-only, so it does not appear in the Dock. Open its gear button to choose favorite drivers, configure updates, or change the time format, refresh cadence, and notification rules.
+Download the newest universal ZIP from [GitHub Releases](https://github.com/johndavidwright/f1-live-macos/releases/latest), then follow [INSTALL.md](INSTALL.md). The app is menu-bar-only, so it does not appear in the Dock. Open its gear button to enable Open at Login, choose favorite drivers, configure updates, or change the time format, refresh cadence, and notification rules. Open at Login is off by default; you can also manage it in macOS System Settings under Login Items.
 
 This preview release is ad-hoc signed rather than notarized. See [INSTALL.md](INSTALL.md) for the one-time macOS approval flow.
 
