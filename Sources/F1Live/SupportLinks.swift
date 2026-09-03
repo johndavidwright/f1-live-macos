@@ -1,6 +1,8 @@
 import Foundation
 
 enum SupportLinks {
+    static let f1Fantasy = URL(string: "https://fantasy.formula1.com/")!
+
     static var bugReport: URL {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "local"

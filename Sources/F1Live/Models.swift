@@ -50,6 +50,11 @@ struct Race: Identifiable, Hashable, Sendable {
     var weekendStartAt: Date { sessions.first?.startAt ?? raceStartAt }
     var weekendEndAt: Date { sessions.last?.endAt ?? raceStartAt }
     var isSprintWeekend: Bool { sessions.contains { $0.key == "sprint" } }
+    var fantasyLockSession: RaceSession? {
+        let session = isSprintWeekend ? sessions.first { $0.key == "sprint" } : qualifyingSession
+        guard session?.dateOnly == false else { return nil }
+        return session
+    }
 
     func liveSession(at now: Date) -> RaceSession? {
         sessions.first { $0.state(at: now) == .live }

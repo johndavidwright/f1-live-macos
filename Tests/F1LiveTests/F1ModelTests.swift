@@ -69,3 +69,5 @@ import Testing
 @Test @MainActor func notificationErrorsAndUnbundledExecution() async throws { try await NotificationSelfTests.errorsAndUnbundledExecution() }
 @Test @MainActor func notificationCancellationAndReplacement() async throws { try await NotificationSelfTests.cancelledAndOverlappingSchedules() }
 @Test @MainActor func reminderPlanAndSupportLink() throws { try NotificationSelfTests.reminderPlanAndBugReport() }
+@Test @MainActor func fantasyTeamLockDeadlineAndReminders() async throws { try await NotificationSelfTests.fantasyTeamLockReminders() }
+@Test @MainActor func fantasyDisplayIsIndependentOfNotifications() async throws { try await NotificationSelfTests.fantasyDisplayAndNotificationsAreIndependent() }

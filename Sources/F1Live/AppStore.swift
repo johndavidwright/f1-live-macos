@@ -7,10 +7,12 @@ final class SettingsStore: ObservableObject {
     private let defaults: UserDefaults
 
     @Published var useTwelveHourTime: Bool { didSet { defaults.set(useTwelveHourTime, forKey: "useTwelveHourTime") } }
+    @Published var showFantasyLock: Bool { didSet { defaults.set(showFantasyLock, forKey: "showFantasyLock") } }
     @Published var autoLive: Bool { didSet { defaults.set(autoLive, forKey: "autoLive") } }
     @Published var liveRefreshSeconds: Int { didSet { defaults.set(liveRefreshSeconds, forKey: "liveRefreshSeconds") } }
     @Published var refreshMinutes: Int { didSet { defaults.set(refreshMinutes, forKey: "refreshMinutes") } }
     @Published var notifications: Bool { didSet { defaults.set(notifications, forKey: "notifications") } }
+    @Published var fantasyTeamLockReminders: Bool { didSet { defaults.set(fantasyTeamLockReminders, forKey: "fantasyTeamLockReminders") } }
     @Published var notifyLeadMinutes: String { didSet { defaults.set(notifyLeadMinutes, forKey: "notifyLeadMinutes") } }
     @Published var notifyRace: Bool { didSet { defaults.set(notifyRace, forKey: "notifyRace") } }
     @Published var notifyQualifying: Bool { didSet { defaults.set(notifyQualifying, forKey: "notifyQualifying") } }
@@ -24,10 +26,13 @@ final class SettingsStore: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         useTwelveHourTime = defaults.object(forKey: "useTwelveHourTime") as? Bool ?? false
+        showFantasyLock = defaults.object(forKey: "showFantasyLock") as? Bool
+            ?? (defaults.object(forKey: "fantasyTeamLockReminders") as? Bool ?? false)
         autoLive = defaults.object(forKey: "autoLive") as? Bool ?? true
         liveRefreshSeconds = defaults.object(forKey: "liveRefreshSeconds") as? Int ?? 12
         refreshMinutes = defaults.object(forKey: "refreshMinutes") as? Int ?? 15
         notifications = defaults.object(forKey: "notifications") as? Bool ?? false
+        fantasyTeamLockReminders = defaults.object(forKey: "fantasyTeamLockReminders") as? Bool ?? false
         notifyLeadMinutes = defaults.string(forKey: "notifyLeadMinutes") ?? "30,15"
         notifyRace = defaults.object(forKey: "notifyRace") as? Bool ?? true
         notifyQualifying = defaults.object(forKey: "notifyQualifying") as? Bool ?? true
@@ -40,12 +45,19 @@ final class SettingsStore: ObservableObject {
             favoriteDriverIDs = []
             needsFavoriteMigration = true
         }
+        // Preserve the previously visible Fantasy deadline once, then keep display
+        // and notification preferences independent, including across launches.
+        if defaults.object(forKey: "showFantasyLock") == nil {
+            defaults.set(showFantasyLock, forKey: "showFantasyLock")
+        }
     }
 
     var leadMinutes: [Int] {
         notifyLeadMinutes.split(separator: ",").compactMap { Int($0.trimmingCharacters(in: .whitespaces)) }
             .filter { (1...1_440).contains($0) }.uniqued().sorted(by: >)
     }
+
+    var hasReminderSelections: Bool { notifications || fantasyTeamLockReminders }
 
     func applyNotificationDefaultIfNeeded(authorized: Bool) {
         guard defaults.object(forKey: "notifications") == nil else { return }
@@ -179,7 +191,7 @@ final class AppStore: ObservableObject {
                 manualLiveChoice = false
             }
             applyAutoLive()
-            if settings.notifications { await notificationController.schedule(data: fresh, now: now) }
+            if settings.hasReminderSelections { await notificationController.schedule(data: fresh, now: now) }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -257,9 +269,9 @@ final class AppStore: ObservableObject {
                 try? await Task.sleep(for: .seconds(max(5, self.settings.liveRefreshSeconds)))
             }
         }
-        if settings.notifications, let data {
+        if settings.hasReminderSelections, let data {
             Task { await notificationController.schedule(data: data, now: now) }
-        } else if !settings.notifications {
+        } else {
             notificationController.clear()
         }
     }

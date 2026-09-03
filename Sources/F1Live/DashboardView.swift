@@ -141,7 +141,14 @@ private struct RaceOverviewView: View {
             hero
             DashboardSection("WEEKEND · \(F1Formatting.dateRange(race.weekendStartAt, race.weekendEndAt))") {
                 VStack(spacing: 0) {
-                    ForEach(race.sessions) { SessionRowView(session: $0) }
+                    ForEach(race.sessions) { session in
+                        SessionRowView(
+                            session: session,
+                            showsFantasyLock: settings.showFantasyLock
+                                && session.key == race.fantasyLockSession?.key
+                                && session.startAt > store.now
+                        )
+                    }
                 }
             }
             if let qualifying = data.qualifying, qualifying.round == race.round, !qualifying.positions.isEmpty {
@@ -212,6 +219,28 @@ private struct RaceOverviewView: View {
                 .frame(width: 124, height: 124)
         }
         .frame(maxWidth: .infinity, minHeight: 126, alignment: .leading)
+    }
+}
+
+private struct FantasyLockBadge: View {
+    var body: some View {
+        Link(destination: SupportLinks.f1Fantasy) {
+            HStack(spacing: 3) {
+                Image(systemName: "flag.checkered")
+                Text("FANTASY LOCK")
+                Image(systemName: "arrow.up.right")
+            }
+            .font(.caption2.monospaced().weight(.semibold))
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, 5).padding(.vertical, 2)
+            .contentShape(Rectangle())
+            .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 4))
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help("Open F1 Fantasy — teams lock when this session begins.")
+        .accessibilityLabel("F1 Fantasy team lock")
+        .accessibilityHint("Opens F1 Fantasy. Teams lock when this session begins.")
     }
 }
 
@@ -349,13 +378,20 @@ private struct SessionRowView: View {
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var settings: SettingsStore
     let session: RaceSession
+    let showsFantasyLock: Bool
 
     var state: SessionState { session.state(at: store.now) }
 
     var body: some View {
         HStack(spacing: 10) {
             Text(session.shortName).fontWeight(.semibold).frame(width: 52, alignment: .leading)
-            Text(session.name).foregroundStyle(state == .done ? .tertiary : .secondary).frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 6) {
+                Text(session.name)
+                    .foregroundStyle(state == .done ? .tertiary : .secondary)
+                    .lineLimit(1)
+                if showsFantasyLock { FantasyLockBadge() }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             Text(F1Formatting.shortDay(session.startAt)).foregroundStyle(.tertiary).frame(width: 34)
             Text(session.dateOnly ? "—" : F1Formatting.time(session.startAt, twelveHour: settings.useTwelveHourTime)).frame(width: 64, alignment: .leading)
             Text(stateText)
@@ -366,7 +402,7 @@ private struct SessionRowView: View {
         .font(.caption.monospaced())
         .padding(.horizontal, 10).padding(.vertical, 5)
         .background(state == .live ? Color.red.opacity(0.1) : Color.clear, in: RoundedRectangle(cornerRadius: 5))
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: showsFantasyLock ? .contain : .combine)
         .accessibilityLabel("\(session.name), \(stateText), \(F1Formatting.longDate(session.startAt)) at \(F1Formatting.time(session.startAt, twelveHour: settings.useTwelveHourTime))")
     }
 

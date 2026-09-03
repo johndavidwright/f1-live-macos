@@ -16,6 +16,11 @@ struct SessionReminder {
     let body: String
 }
 
+enum ReminderPreference: Equatable {
+    case sessions
+    case fantasyTeamLock
+}
+
 @MainActor
 protocol NotificationServicing {
     func permission() async -> NotificationPermission
@@ -59,6 +64,10 @@ private struct SystemNotificationService: NotificationServicing {
     func removeAllPending() { UNUserNotificationCenter.current().removeAllPendingNotificationRequests() }
     func removePending(ids: [String]) { UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids) }
     func openSystemSettings() -> Bool {
+        if let notifications = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension"),
+           NSWorkspace.shared.open(notifications) {
+            return true
+        }
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.systempreferences") else { return false }
         return NSWorkspace.shared.open(url)
     }
@@ -70,6 +79,7 @@ final class NotificationController: ObservableObject {
     private let service: any NotificationServicing
     private var scheduleID = UUID()
     private var permissionRevision = 0
+    private var pendingPreference: ReminderPreference?
     let isAvailable: Bool
 
     @Published private(set) var permission: NotificationPermission?
@@ -85,13 +95,21 @@ final class NotificationController: ObservableObject {
     var canSchedule: Bool { isAvailable && permission?.canSchedule == true }
     var needsIntroduction: Bool { permission?.authorization == .notDetermined }
     var isBlocked: Bool { permission?.authorization == .denied }
+    var shouldShowSystemSettings: Bool {
+        guard let permission else { return false }
+        switch permission.authorization {
+        case .denied, .unavailable: return true
+        case .authorized, .provisional: return !permission.alertsEnabled
+        case .notDetermined: return false
+        }
+    }
 
     var statusMessage: String {
-        guard isAvailable else { return "Open the installed F1 Live app to enable session reminders." }
+        guard isAvailable else { return "Open the installed F1 Live app to enable reminders." }
         guard let permission else { return "Checking notification permission…" }
         switch permission.authorization {
         case .notDetermined:
-            return "Enable session reminders to choose whether F1 Live can send notifications."
+            return "Enable a reminder to choose whether F1 Live can send notifications."
         case .denied:
             return "Blocked by macOS. Open System Settings → Notifications → F1 Live and allow notifications."
         case .unavailable:
@@ -100,7 +118,7 @@ final class NotificationController: ObservableObject {
             if !permission.alertsEnabled {
                 return "Notifications are allowed, but banners are off. You can change this in System Settings → Notifications → F1 Live."
             }
-            return settings.notifications ? "Reminders are enabled for your selected sessions." : "Session reminders are off."
+            return settings.hasReminderSelections ? "Reminders are enabled for your selections." : "Reminders are off."
         }
     }
 
@@ -113,29 +131,47 @@ final class NotificationController: ObservableObject {
         if permission != latest { errorMessage = nil }
         permission = latest
         settings.applyNotificationDefaultIfNeeded(authorized: latest.canSchedule)
+        if latest.canSchedule, let pendingPreference {
+            self.pendingPreference = nil
+            setPreference(pendingPreference, enabled: true)
+        }
     }
 
-    // Called only after a user action and, on first use, our introduction sheet.
-    func enableReminders() async {
+    // Called only after the user turns on a reminder preference.
+    func enableReminders(for preference: ReminderPreference = .sessions) async {
         guard isAvailable, !isRequesting else { return }
         isRequesting = true
         errorMessage = nil
         defer { isRequesting = false }
         await refreshStatus()
+        let wasNotDetermined = needsIntroduction
         do {
-            if needsIntroduction {
+            if wasNotDetermined {
                 try await service.requestPermission()
                 await refreshStatus()
             }
-            if canSchedule { settings.notifications = true }
+            if canSchedule {
+                setPreference(preference, enabled: true)
+            } else if !wasNotDetermined && shouldShowSystemSettings {
+                pendingPreference = preference
+                openSystemSettings()
+            }
         } catch {
             errorMessage = "Couldn’t request notification permission. \(error.localizedDescription)"
         }
     }
 
-    func disableReminders() {
-        settings.notifications = false
+    func disableReminders(for preference: ReminderPreference = .sessions) {
+        if pendingPreference == preference { pendingPreference = nil }
+        setPreference(preference, enabled: false)
         clear()
+    }
+
+    private func setPreference(_ preference: ReminderPreference, enabled: Bool) {
+        switch preference {
+        case .sessions: settings.notifications = enabled
+        case .fantasyTeamLock: settings.fantasyTeamLockReminders = enabled
+        }
     }
 
     func openSystemSettings() {
@@ -157,12 +193,12 @@ final class NotificationController: ObservableObject {
         scheduleID = revision
         await refreshStatus()
         guard scheduleID == revision else { return }
-        guard settings.notifications, canSchedule else { clear(); return }
+        guard settings.hasReminderSelections, canSchedule else { clear(); return }
         let reminders = NotificationScheduler.reminders(data: data, settings: settings, now: now)
         service.removeAllPending()
         errorMessage = nil
         for reminder in reminders {
-            guard scheduleID == revision, settings.notifications else { return }
+            guard scheduleID == revision, settings.hasReminderSelections else { return }
             // Unique batch IDs let an in-flight, cancelled request be removed
             // without deleting its replacement from a newer scheduling pass.
             let request = SessionReminder(id: "f1live.\(revision).\(reminder.id)", fireAt: reminder.fireAt, title: reminder.title, body: reminder.body)
@@ -171,7 +207,7 @@ final class NotificationController: ObservableObject {
             } catch {
                 if scheduleID == revision { errorMessage = "Some reminders couldn’t be scheduled. Try Refresh Now." }
             }
-            if scheduleID != revision || !settings.notifications {
+            if scheduleID != revision || !settings.hasReminderSelections {
                 service.removePending(ids: [request.id])
                 return
             }
@@ -182,18 +218,36 @@ final class NotificationController: ObservableObject {
 @MainActor
 enum NotificationScheduler {
     static func reminders(data: DashboardData, settings: SettingsStore, now: Date) -> [SessionReminder] {
-        let sessions = ([data.race].compactMap { $0 } + data.upcoming).flatMap(\.sessions)
-            .filter { $0.startAt > now && settings.includes($0) }
+        let races = [data.race].compactMap { $0 } + data.upcoming
         var requests: [SessionReminder] = []
-        for session in sessions {
-            for lead in settings.leadMinutes {
-                let fireAt = session.startAt.addingTimeInterval(-TimeInterval(lead) * .minute)
-                if fireAt > now {
-                    requests.append(SessionReminder(id: "\(session.id)-lead-\(lead)", fireAt: fireAt, title: "\(session.name) in \(lead) minutes", body: "Get ready for the next Formula 1 session."))
+        if settings.notifications {
+            let sessions = races.flatMap(\.sessions)
+                .filter { $0.startAt > now && settings.includes($0) }
+            for session in sessions {
+                for lead in settings.leadMinutes {
+                    let fireAt = session.startAt.addingTimeInterval(-TimeInterval(lead) * .minute)
+                    if fireAt > now {
+                        requests.append(SessionReminder(id: "\(session.id)-lead-\(lead)", fireAt: fireAt, title: "\(session.name) in \(lead) minutes", body: "Get ready for the next Formula 1 session."))
+                    }
+                }
+                requests.append(SessionReminder(id: "\(session.id)-start", fireAt: session.startAt, title: "\(session.name) is starting", body: "Open F1 Live from the menu bar for the latest session status."))
+                requests.append(SessionReminder(id: "\(session.id)-end", fireAt: session.endAt, title: "\(session.name) scheduled finish", body: "Results and standings will refresh automatically."))
+            }
+        }
+        if settings.fantasyTeamLockReminders {
+            for race in races {
+                guard let deadline = race.fantasyLockSession, deadline.startAt > now else { continue }
+                for lead in [1_440, 60] {
+                    let fireAt = deadline.startAt.addingTimeInterval(-TimeInterval(lead) * .minute)
+                    let leadText = lead == 1_440 ? "24 hours" : "1 hour"
+                    requests.append(SessionReminder(
+                        id: "fantasy-\(race.id)-lead-\(lead)",
+                        fireAt: fireAt,
+                        title: "F1 Fantasy locks in \(leadText)",
+                        body: "Set your team for the \(race.name) before \(deadline.name) begins."
+                    ))
                 }
             }
-            requests.append(SessionReminder(id: "\(session.id)-start", fireAt: session.startAt, title: "\(session.name) is starting", body: "Open F1 Live from the menu bar for the latest session status."))
-            requests.append(SessionReminder(id: "\(session.id)-end", fireAt: session.endAt, title: "\(session.name) scheduled finish", body: "Results and standings will refresh automatically."))
         }
         return Array(requests.filter { $0.fireAt.timeIntervalSince(now) > 1 }.sorted { $0.fireAt < $1.fireAt }.prefix(60))
     }

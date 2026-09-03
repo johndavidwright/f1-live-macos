@@ -11,6 +11,7 @@ A native macOS menu-bar port of [marconn01/live-f1](https://github.com/marconn01
 - Delayed-feed warnings that preserve the last known timing while data is unavailable
 - Offline fallback from `~/Library/Caches/F1Live`
 - Opt-in session reminders with clear macOS permission status
+- Optional clickable F1 Fantasy lock label beside Qualifying or Sprint, with separately controlled team-lock notifications
 - Optional Open at Login setting to start the menu-bar app when you sign in
 - Secure in-app update checks with optional automatic download and installation
 - Report a Bug shortcut that opens a draft on GitHub
@@ -32,7 +33,7 @@ Development and release commands are documented separately in [DEVELOPMENT.md](D
 
 Race data comes from the public, keyless [Jolpica-F1](https://jolpi.ca/) and [OpenF1](https://openf1.org/) APIs. Calendar and standings responses are cached locally so the dashboard can continue to show its last good data offline. Live timing is polled only while live mode is enabled and the schedule indicates an active session. Update checks and downloads contact GitHub and its release-asset hosting.
 
-Session reminders are opt-in for new users. F1 Live explains them before requesting macOS notification permission and preserves existing notification preferences when upgrading. **Report a Bug** opens a GitHub draft containing the app and macOS versions; no logs are attached and no issue is submitted automatically.
+Reminders are opt-in for new users. F1 Live requests macOS notification permission only when a reminder switch is turned on and preserves existing notification preferences when upgrading. **Report a Bug** opens a GitHub draft containing the app and macOS versions; no logs are attached and no issue is submitted automatically.
 
 ## Attribution and license
 

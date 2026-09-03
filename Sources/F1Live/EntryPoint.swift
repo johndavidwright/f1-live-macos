@@ -9,7 +9,7 @@ enum EntryPoint {
         if CommandLine.arguments.contains("--self-test") {
             do {
                 try await SelfTests.run()
-                print("Self-tests passed (core, login items, live timing, notifications, and support links).")
+                print("Self-tests passed (core, login items, live timing, notifications, F1 Fantasy, and support links).")
             } catch {
                 fputs("Self-test failed: \(error)\n", stderr)
                 Foundation.exit(1)
@@ -44,6 +44,8 @@ enum EntryPoint {
         if CommandLine.arguments.contains("--preview-window") {
             let previewDefaults = UserDefaults(suiteName: "F1LivePreview.\(ProcessInfo.processInfo.processIdentifier)")!
             previewDefaults.set(false, forKey: "notifications")
+            previewDefaults.set(false, forKey: "fantasyTeamLockReminders")
+            previewDefaults.set(true, forKey: "showFantasyLock")
             let settings = SettingsStore(defaults: previewDefaults)
             let store = AppStore(settings: settings)
             let updates = UpdateController()

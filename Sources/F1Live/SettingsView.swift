@@ -38,6 +38,8 @@ struct SettingsView: View {
                     Text("12-hour").tag(true)
                 }
                 Toggle("Switch to live timing when a race starts", isOn: $settings.autoLive)
+                Toggle("Show F1 Fantasy deadline", isOn: $settings.showFantasyLock)
+                    .help("Shows a clickable Fantasy Lock label beside Qualifying or Sprint. Notifications are controlled separately.")
             }
 
             Section("Updates") {
