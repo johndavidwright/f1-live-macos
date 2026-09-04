@@ -35,3 +35,5 @@ Update `CFBundleShortVersionString` and the monotonically increasing `CFBundleVe
 The packaging script creates a universal release ZIP, its SHA-256 checksum, and an app-only ZIP for Sparkle. The appcast script signs the update archive with the EdDSA key stored in the macOS Keychain under `dev.nocram.f1live.macos`.
 
 Tag pushes run `.github/workflows/release.yml`. The workflow expects the exported Sparkle private key in the `SPARKLE_PRIVATE_KEY` repository secret and publishes the distribution ZIP, checksum, update ZIP, and signed appcast to GitHub Releases. Keep the private key out of the repository and retain a secure backup; installed copies rely on that key to authenticate future updates.
+
+Pushing `main` publishes source changes and runs CI; installed apps only see updates after a new version tag publishes a release. Commit the version and release notes, push the commit, then tag it with the matching `v`-prefixed version and push that tag. After the release workflow succeeds, verify that the URL in `SUFeedURL` serves the new appcast with a higher build number and a downloadable, signed update archive.
