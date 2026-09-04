@@ -63,6 +63,7 @@ import Testing
 @Test func liveDetailsKeepRefreshing() throws { try LiveTimingSelfTests.detailRefreshCadence() }
 @Test func liveFeedDetectsEmptyAndRepeatedResponses() throws { try LiveTimingSelfTests.emptyAndRepeatedResponses() }
 @Test func liveFeedHandlesTimestamps() throws { try LiveTimingSelfTests.timestampHandling() }
+@Test @MainActor func menuBarReturnsToCountdownWhenSessionEnds() async throws { try await MenuBarSelfTests.sessionEndRestoresCountdown() }
 @Test func openF1AccessErrorsAndRecovery() async throws { try await F1APISelfTests.run() }
 @Test @MainActor func optionalOpenF1Credentials() async throws { try await OpenF1AuthSelfTests.run() }
 @Test @MainActor func notificationsRequireOptIn() async throws { try await NotificationSelfTests.firstUseAndOptIn() }

@@ -236,7 +236,9 @@ final class AppStore: ObservableObject {
         return live.freshnessWarning(at: now, refreshSeconds: settings.liveRefreshSeconds)
     }
     var menuBarTitle: String {
-        if race?.liveFeedSession(at: now) != nil { return "F1 LIVE" }
+        // The feed's post-session buffer is for late timing updates; it must
+        // not extend the session's live label in the menu bar.
+        if race?.liveSession(at: now) != nil { return "F1 LIVE" }
         if let next = race?.nextSession(at: now) { return "F1 \(F1Formatting.countdown(to: next.startAt, from: now, compact: true))" }
         if let race { return "F1 \(F1Formatting.countdown(to: race.raceStartAt, from: now, compact: true))" }
         return isLoading ? "F1 …" : "F1"
@@ -244,7 +246,7 @@ final class AppStore: ObservableObject {
 
     var tooltip: String {
         guard let race else { return errorMessage ?? "F1 Live" }
-        if let session = race.liveFeedSession(at: now) { return "\(race.name) — \(session.name) live" }
+        if let session = race.liveSession(at: now) { return "\(race.name) — \(session.name) live" }
         if let next = race.nextSession(at: now) {
             return "\(race.name) — \(next.name) in \(F1Formatting.countdown(to: next.startAt, from: now))"
         }
@@ -262,8 +264,8 @@ final class AppStore: ObservableObject {
         return (top, favorites)
     }
 
-    private func tick() {
-        now = Date()
+    func tick(at time: Date = Date()) {
+        now = time
         synchronizeLiveSession()
         applyAutoLive()
     }

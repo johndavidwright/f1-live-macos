@@ -1,14 +1,11 @@
-# F1 Live 0.2.4
+# F1 Live 0.2.5
 
 Preview release for macOS 14 or later, supporting Apple-silicon and Intel Macs.
 
 ## Highlights
 
-- Adds optional personal OpenF1 credentials in **Settings → OpenF1 Live Timing**. Enter your Client ID and Client Secret, then choose **Save & Test Connection** to enable timing with your own paid OpenF1 account.
-- Stores credentials in macOS Keychain and renews the OpenF1 connection automatically. You can remove saved credentials in Settings at any time.
-- Keeps startup and background refreshes quiet. If macOS needs permission to read saved credentials, live timing pauses and Settings offers **Authorize Saved Credentials**. Cancelling keeps your credentials saved.
-- Replaces the generic invalid-response error with a clear explanation when OpenF1 requires an account or cannot provide timing. The timing view no longer reports **RUNNING** before any data arrives.
-- Automatically switches to race timing only when credentials are available. Credential setup stays in Settings, keeping the timing view focused on the session.
+- Fixes **F1 LIVE** remaining in the menu bar for up to 30 minutes after a session ends. The label now returns to the next-session countdown at the session's end time, without waiting for a data refresh.
+- Updates the menu-bar tooltip to identify the next session at the same time. For example, after FP2 ends, both the label and tooltip count down to FP3.
 
 F1 Live remains free. The calendar, standings, circuit maps, qualifying results, countdowns, Fantasy deadlines, and reminders work without an OpenF1 account. OpenF1 subscriptions are managed directly by OpenF1.
 
