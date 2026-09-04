@@ -29,7 +29,17 @@ cp "$project_directory/Sources/F1Live/Resources/AppIcon.icns" "$application/Cont
 cp "$project_directory/Sources/F1Live/Resources/Circuits/"*.svg "$application/Contents/Resources/Circuits/"
 chmod 755 "$application/Contents/MacOS/F1Live"
 
-if command -v codesign >/dev/null 2>&1; then
+if [ -n "${F1_CODE_SIGN_IDENTITY:-}" ] && [ "$F1_CODE_SIGN_IDENTITY" != "-" ]; then
+  # Sign nested Sparkle components inside-out, retaining only the Downloader's
+  # required sandbox entitlements. Use the same Developer ID for every release.
+  sparkle="$application/Contents/Frameworks/Sparkle.framework"
+  codesign --force --timestamp --options runtime --sign "$F1_CODE_SIGN_IDENTITY" "$sparkle/Versions/B/XPCServices/Installer.xpc"
+  codesign --force --timestamp --options runtime --preserve-metadata=entitlements --sign "$F1_CODE_SIGN_IDENTITY" "$sparkle/Versions/B/XPCServices/Downloader.xpc"
+  codesign --force --timestamp --options runtime --sign "$F1_CODE_SIGN_IDENTITY" "$sparkle/Versions/B/Autoupdate"
+  codesign --force --timestamp --options runtime --sign "$F1_CODE_SIGN_IDENTITY" "$sparkle/Versions/B/Updater.app"
+  codesign --force --timestamp --options runtime --sign "$F1_CODE_SIGN_IDENTITY" "$sparkle"
+  codesign --force --timestamp --options runtime --sign "$F1_CODE_SIGN_IDENTITY" "$application"
+else
   codesign --force --sign - "$application"
 fi
 

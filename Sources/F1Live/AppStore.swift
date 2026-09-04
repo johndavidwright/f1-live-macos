@@ -119,6 +119,7 @@ final class AppStore: ObservableObject {
 
     let settings: SettingsStore
     let notificationController: NotificationController
+    let openF1Account: OpenF1AccountController
     private let api: F1API
     private var started = false
     private var manualLiveChoice = false
@@ -128,10 +129,12 @@ final class AppStore: ObservableObject {
     private var settingsSubscriptions: Set<AnyCancellable> = []
     private var lastRaceID: String?
     private var liveSessionKey: Int?
+    private var refreshRequestedWhileLoading = false
 
     init(settings: SettingsStore, api: F1API = F1API()) {
         self.settings = settings
         self.api = api
+        openF1Account = OpenF1AccountController(api: api)
         notificationController = NotificationController(settings: settings)
         settings.objectWillChange
             .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
@@ -150,6 +153,7 @@ final class AppStore: ObservableObject {
         started = true
         refreshTask = Task { [weak self] in
             guard let self else { return }
+            await self.openF1Account.refreshStatus()
             await self.notificationController.refreshStatus()
             await self.refresh(force: false)
             while !Task.isCancelled {
@@ -174,10 +178,22 @@ final class AppStore: ObservableObject {
     }
 
     func refresh(force: Bool = true) async {
-        guard !isLoading else { return }
+        guard !isLoading else {
+            if force { refreshRequestedWhileLoading = true }
+            return
+        }
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            if refreshRequestedWhileLoading {
+                refreshRequestedWhileLoading = false
+                Task {
+                    await self.refresh(force: true)
+                    await self.pollLiveIfNeeded(force: true)
+                }
+            }
+        }
         do {
             let fresh = try await api.loadDashboard(refreshMinutes: settings.refreshMinutes, force: force, now: now)
             let raceChanged = fresh.race?.id != lastRaceID
@@ -213,7 +229,11 @@ final class AppStore: ObservableObject {
     var weekend: WeekendStatus { race?.weekendStatus(at: now) ?? WeekendStatus(label: "FORMULA 1", kind: .idle, session: nil) }
     var activeFeedSession: RaceSession? { race?.liveFeedSession(at: now) }
     var liveWarning: String? {
-        liveError ?? live.freshnessWarning(at: now, refreshSeconds: settings.liveRefreshSeconds)
+        if let liveError { return liveError }
+        if let session = activeFeedSession, session.sessionKey == nil {
+            return data?.liveUnavailableReason ?? "OpenF1 session details are not available yet. They will refresh automatically."
+        }
+        return live.freshnessWarning(at: now, refreshSeconds: settings.liveRefreshSeconds)
     }
     var menuBarTitle: String {
         if race?.liveFeedSession(at: now) != nil { return "F1 LIVE" }
@@ -249,7 +269,8 @@ final class AppStore: ObservableObject {
     }
 
     private func synchronizeLiveSession() {
-        guard let key = activeFeedSession?.sessionKey, liveSessionKey != key else { return }
+        let key = activeFeedSession?.sessionKey
+        guard liveSessionKey != key else { return }
         liveSessionKey = key
         live = LiveTimingState()
         liveError = nil
@@ -257,7 +278,7 @@ final class AppStore: ObservableObject {
 
     private func applyAutoLive() {
         guard settings.autoLive, !manualLiveChoice else { return }
-        liveMode = race?.liveFeedSession(at: now)?.key == "race"
+        liveMode = openF1Account.hasCredentials && race?.liveFeedSession(at: now)?.key == "race"
     }
 
     private func settingsDidChange() {
@@ -281,6 +302,12 @@ final class AppStore: ObservableObject {
         if let data { await notificationController.schedule(data: data, now: now) }
     }
 
+    func openF1CredentialsChanged() async {
+        liveError = nil
+        await refresh(force: true)
+        await pollLiveIfNeeded(force: true)
+    }
+
     private func pollLiveIfNeeded(force: Bool = false) async {
         guard liveMode, let session = activeFeedSession, let key = session.sessionKey, !isPollingLive else { return }
         synchronizeLiveSession()
@@ -293,9 +320,13 @@ final class AppStore: ObservableObject {
             guard !Task.isCancelled, liveSessionKey == key, activeFeedSession?.sessionKey == key else { return }
             live.merge(batch, polledAt: Date(), includedDetails: includeSlow)
             liveError = nil
+            await openF1Account.refreshStatus()
+        } catch is CancellationError {
+            return
         } catch {
             guard !Task.isCancelled, liveSessionKey == key, activeFeedSession?.sessionKey == key else { return }
             liveError = error.localizedDescription
+            await openF1Account.refreshStatus()
         }
     }
 }

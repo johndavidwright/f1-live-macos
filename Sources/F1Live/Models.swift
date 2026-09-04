@@ -62,7 +62,9 @@ struct Race: Identifiable, Hashable, Sendable {
 
     func liveFeedSession(at now: Date) -> RaceSession? {
         sessions.first {
-            guard $0.sessionKey != nil, now >= $0.startAt else { return false }
+            // The calendar can identify an active session even when OpenF1
+            // refuses the request that would provide its timing-feed key.
+            guard !$0.dateOnly, now >= $0.startAt else { return false }
             let grace = $0.exactEnd ? 30.0 * .minute : 0
             return now <= $0.endAt.addingTimeInterval(grace)
         }
@@ -157,6 +159,7 @@ struct DashboardData: Sendable {
     let raceDistance: Int?
     let stale: Bool
     let lastUpdatedAt: Date
+    var liveUnavailableReason: String? = nil
 
     var race: Race? { races.indices.contains(raceIndex) ? races[raceIndex] : nil }
     var upcoming: [Race] {

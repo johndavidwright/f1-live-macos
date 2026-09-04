@@ -1,6 +1,7 @@
 import Foundation
 
 enum SupportLinks {
+    static let openF1Account = URL(string: "https://openf1.org/")!
     static let f1Fantasy = URL(string: "https://fantasy.formula1.com/")!
 
     static var bugReport: URL {

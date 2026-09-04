@@ -7,7 +7,7 @@ A native macOS menu-bar port of [marconn01/live-f1](https://github.com/marconn01
 - Menu-bar countdown to the next session, with a live indicator during sessions
 - Next race, local-time weekend schedule, circuit map, qualifying grid, upcoming races, and driver standings
 - Top-five standings plus any number of favorite drivers, with Lewis Hamilton selected by default on first launch
-- OpenF1 live timing tower with positions, intervals, gaps, laps, pit-stop counts, and race-control status
+- OpenF1 timing tower with positions, intervals, gaps, laps, pit-stop counts, and race-control status when the feed is accessible
 - Delayed-feed warnings that preserve the last known timing while data is unavailable
 - Offline fallback from `~/Library/Caches/F1Live`
 - Opt-in session reminders with clear macOS permission status
@@ -15,7 +15,8 @@ A native macOS menu-bar port of [marconn01/live-f1](https://github.com/marconn01
 - Optional Open at Login setting to start the menu-bar app when you sign in
 - Secure in-app update checks with optional automatic download and installation
 - Report a Bug shortcut that opens a draft on GitHub
-- No API key required
+- No API key required for the calendar and standings
+- Optional personal OpenF1 credentials for live timing, stored in macOS Keychain
 
 ## Requirements
 
@@ -31,7 +32,15 @@ Development and release commands are documented separately in [DEVELOPMENT.md](D
 
 ## Data and privacy
 
-Race data comes from the public, keyless [Jolpica-F1](https://jolpi.ca/) and [OpenF1](https://openf1.org/) APIs. Calendar and standings responses are cached locally so the dashboard can continue to show its last good data offline. Live timing is polled only while live mode is enabled and the schedule indicates an active session. Update checks and downloads contact GitHub and its release-asset hosting.
+Race data comes from [Jolpica-F1](https://jolpi.ca/) and [OpenF1](https://openf1.org/). Calendar, standings, qualifying results, circuit maps, countdowns, and reminders work without an account. Responses are cached locally so the dashboard can continue to show its last good data offline.
+
+Live timing is optional and requires your own paid OpenF1 account. In **Settings → OpenF1 Live Timing**, enter your **Client ID** and **Client Secret**, then choose **Save & Test Connection**. F1 Live stays free; subscriptions are managed directly by OpenF1. You can remove your credentials in Settings at any time.
+
+Personal credentials are stored only in this Mac’s Keychain, not in preferences or cache files. The app exchanges them directly with `https://api.openf1.org/token` and keeps the resulting access token in memory, renewing it before expiry. Authentication is used only with OpenF1; HTTP redirects are refused to prevent credentials from being forwarded. Credentials and tokens are never included in bug-report drafts or app logs. Removing credentials clears both the Keychain entry and the in-memory connection.
+
+Opening the app or refreshing data never opens a Keychain approval prompt. If macOS needs approval to read saved credentials, live timing stays paused while the rest of the dashboard works. Choose **Authorize Saved Credentials** in Settings when you want to resume. Preview builds may need this approval again after an update; cancelling keeps your credentials saved.
+
+Without credentials, live mode explains the optional account requirement when OpenF1 restricts access during a live session. Access checks back off for five minutes before retrying, and any last-known timing stays visible. Saving or testing credentials retries immediately. Live timing is polled only while live mode is enabled and the schedule indicates an active session. Update checks and downloads contact GitHub and its release-asset hosting.
 
 Reminders are opt-in for new users. F1 Live requests macOS notification permission only when a reminder switch is turned on and preserves existing notification preferences when upgrading. **Report a Bug** opens a GitHub draft containing the app and macOS versions; no logs are attached and no issue is submitted automatically.
 

@@ -258,7 +258,7 @@ private struct LiveTimingView: View {
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 4) {
-                        Text(store.live.status.label)
+                        Text(store.live.rows.isEmpty ? "NO TIMING" : store.live.status.label)
                             .font(.caption.monospaced().weight(.bold))
                             .foregroundStyle(statusColour)
                         if store.live.currentLap > 0 {
@@ -281,10 +281,17 @@ private struct LiveTimingView: View {
                     VStack(spacing: 12) {
                         if store.isPollingLive { ProgressView() }
                         Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 30)).foregroundStyle(.red)
-                        Text("Waiting for live timing data…").font(.headline.monospaced())
-                        Text("OpenF1 begins publishing shortly before the session starts.")
-                            .font(.caption).foregroundStyle(.secondary)
-                        if let warning = store.liveWarning { Text(warning).font(.caption).foregroundStyle(.orange) }
+                        Text(store.liveWarning == nil ? "Waiting for live timing data…" : "Live timing unavailable")
+                            .font(.headline.monospaced())
+                        if let warning = store.liveWarning {
+                            Text(warning).font(.caption).foregroundStyle(.orange)
+                                .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button("Back to Race Overview") { store.setLiveMode(false) }
+                        } else {
+                            Text("No timing data has arrived from OpenF1 yet.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                     .frame(maxWidth: .infinity, minHeight: 430)
                 } else {
@@ -325,12 +332,14 @@ private struct LiveTimingView: View {
     }
 
     private var statusColour: Color {
+        if store.live.rows.isEmpty { return .secondary }
         switch store.live.status.kind {
         case "caution": return .yellow
         case "stopped", "finished": return .red
         default: return .green
         }
     }
+
 }
 
 private struct StatusChip: View {

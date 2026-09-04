@@ -8,6 +8,8 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            OpenF1SettingsSection(controller: store.openF1Account)
+
             Section {
                 Toggle(
                     "Open at Login",
@@ -38,6 +40,7 @@ struct SettingsView: View {
                     Text("12-hour").tag(true)
                 }
                 Toggle("Switch to live timing when a race starts", isOn: $settings.autoLive)
+                    .help("Automatically opens live timing when OpenF1 credentials are saved.")
                 Toggle("Show F1 Fantasy deadline", isOn: $settings.showFantasyLock)
                     .help("Shows a clickable Fantasy Lock label beside Qualifying or Sprint. Notifications are controlled separately.")
             }

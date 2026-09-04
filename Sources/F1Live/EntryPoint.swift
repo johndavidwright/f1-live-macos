@@ -137,6 +137,8 @@ enum SelfTests {
 
         try LoginItemSelfTests.run()
         try LiveTimingSelfTests.run()
+        try await F1APISelfTests.run()
+        try await OpenF1AuthSelfTests.run()
         try await NotificationSelfTests.run()
     }
 

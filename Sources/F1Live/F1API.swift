@@ -3,9 +3,11 @@ import Foundation
 import FoundationNetworking
 #endif
 
-enum F1APIError: LocalizedError {
+enum F1APIError: LocalizedError, Equatable {
     case invalidURL
     case badResponse
+    case openF1AccessRestricted
+    case httpStatus(service: String, code: Int)
     case oversizedResponse
     case noData(String)
 
@@ -13,6 +15,11 @@ enum F1APIError: LocalizedError {
         switch self {
         case .invalidURL: return "The F1 service URL is invalid."
         case .badResponse: return "The F1 data service returned an invalid response."
+        case .openF1AccessRestricted:
+            return "Live timing requires a paid OpenF1 account. Connect your own credentials in Settings; the rest of F1 Live works without an account."
+        case .httpStatus(let service, let code):
+            if code == 429 { return "\(service) is limiting requests. Timing will retry automatically." }
+            return "\(service) is unavailable (HTTP \(code)). Please try again later."
         case .oversizedResponse: return "The F1 data response exceeded the safety limit."
         case .noData(let message): return message
         }
@@ -26,20 +33,28 @@ struct HTTPPayload: Sendable {
 }
 
 actor CachedHTTPClient {
-    private let session: URLSession
+    let openF1Auth: OpenF1Authentication
+    private let transport: F1HTTPTransport
     private let cacheDirectory: URL
     private let maximumBytes = 5 * 1_024 * 1_024
+    private let clock: @Sendable () -> Date
+    private var openF1AccessRetryAt: Date?
+    private var accessRevision = 0
 
-    init() {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 15
-        configuration.timeoutIntervalForResource = 20
-        configuration.httpAdditionalHeaders = ["User-Agent": "F1Live-macOS/1.0"]
-        session = URLSession(configuration: configuration)
+    init(
+        transport: F1HTTPTransport? = nil,
+        cacheDirectory: URL? = nil,
+        clock: @escaping @Sendable () -> Date = { Date() },
+        auth: OpenF1Authentication? = nil
+    ) {
+        let transport = transport ?? F1HTTP.transport()
+        self.transport = transport
+        self.openF1Auth = auth ?? OpenF1Authentication(transport: transport, clock: clock)
+        self.clock = clock
 
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        cacheDirectory = base.appendingPathComponent("F1Live", isDirectory: true)
+        self.cacheDirectory = cacheDirectory ?? base.appendingPathComponent("F1Live", isDirectory: true)
     }
 
     func get(_ url: URL, cacheKey: String, ttl: TimeInterval, force: Bool = false) async throws -> HTTPPayload {
@@ -53,15 +68,14 @@ actor CachedHTTPClient {
             guard url.scheme == "https", ["api.jolpi.ca", "api.openf1.org"].contains(url.host) else {
                 throw F1APIError.invalidURL
             }
-            let (data, response) = try await session.data(from: url)
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                throw F1APIError.badResponse
-            }
+            let (data, response) = try await request(url)
+            try validate(response, for: url)
             guard data.count <= maximumBytes else { throw F1APIError.oversizedResponse }
             try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
             try data.write(to: cacheURL, options: .atomic)
             return HTTPPayload(data: data, fetchedAt: Date(), stale: false)
         } catch {
+            if error is CancellationError { throw error }
             if let cached { return HTTPPayload(data: cached.data, fetchedAt: cached.fetchedAt, stale: true) }
             throw error
         }
@@ -70,18 +84,82 @@ actor CachedHTTPClient {
     func live(_ url: URL) async throws -> Data {
         guard url.scheme == "https", url.host == "api.openf1.org" else { throw F1APIError.invalidURL }
         for attempt in 0...1 {
-            let (data, response) = try await session.data(from: url)
+            let (data, response) = try await request(url)
             guard let http = response as? HTTPURLResponse else { throw F1APIError.badResponse }
             if http.statusCode == 404 { return Data("[]".utf8) }
             if http.statusCode == 429, attempt == 0 {
                 try await Task.sleep(for: .milliseconds(750))
                 continue
             }
-            guard (200..<300).contains(http.statusCode) else { throw F1APIError.badResponse }
+            try validate(http, for: url)
             guard data.count <= 2 * 1_024 * 1_024 else { throw F1APIError.oversizedResponse }
             return data
         }
         throw F1APIError.badResponse
+    }
+
+    func testOpenF1Connection() async throws {
+        guard try await openF1Auth.status().clientID != nil else { throw OpenF1AuthError.missingCredentials }
+        await openF1Auth.prepareConnectionTest()
+        let revision = await openF1Auth.revision
+        let url = URL(string: "https://api.openf1.org/v1/sessions?session_key=latest")!
+        let (data, response) = try await request(url)
+        try validate(response, for: url)
+        guard data.count <= maximumBytes, (try? JSONSerialization.jsonObject(with: data)) is [Any] else {
+            throw F1APIError.badResponse
+        }
+        try await openF1Auth.markVerified(revision: revision)
+    }
+
+    private func request(_ url: URL) async throws -> (Data, URLResponse) {
+        let isOpenF1 = F1HTTP.isOpenF1(url)
+        if url.host == "api.openf1.org", !isOpenF1 { throw F1APIError.invalidURL }
+        if !isOpenF1 { return try await transport(URLRequest(url: url)) }
+        let revision = await openF1Auth.revision
+        if accessRevision != revision {
+            openF1AccessRetryAt = nil
+            accessRevision = revision
+        }
+        if let retryAt = openF1AccessRetryAt, clock() < retryAt { throw F1APIError.openF1AccessRestricted }
+
+        for attempt in 0...1 {
+            let authorization = try await openF1Auth.authorization(for: url)
+            try Task.checkCancellation()
+            var request = URLRequest(url: url)
+            if let token = authorization.token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+            let (data, response) = try await transport(request)
+            // Removing or replacing credentials must also retire work already
+            // in flight, so it cannot restore an old connection or cache entry.
+            guard authorization.revision == (await openF1Auth.revision) else { throw CancellationError() }
+            guard let http = response as? HTTPURLResponse else { throw F1APIError.badResponse }
+            if http.statusCode == 401, let token = authorization.token, attempt == 0 {
+                await openF1Auth.invalidateToken(token, revision: authorization.revision)
+                continue
+            }
+            if http.statusCode == 401 || http.statusCode == 403 {
+                if authorization.token != nil {
+                    await openF1Auth.markAccessDenied(revision: authorization.revision)
+                    throw OpenF1AuthError.accessDenied
+                }
+                openF1AccessRetryAt = clock().addingTimeInterval(5 * .minute)
+                accessRevision = authorization.revision
+                throw F1APIError.openF1AccessRestricted
+            }
+            if (200..<300).contains(http.statusCode) {
+                openF1AccessRetryAt = nil
+            }
+            return (data, response)
+        }
+        throw OpenF1AuthError.accessDenied
+    }
+
+    private func validate(_ response: URLResponse, for url: URL) throws {
+        guard let http = response as? HTTPURLResponse else { throw F1APIError.badResponse }
+        let isOpenF1 = url.host == "api.openf1.org"
+        guard (200..<300).contains(http.statusCode) else {
+            throw F1APIError.httpStatus(service: isOpenF1 ? "OpenF1" : "Jolpica", code: http.statusCode)
+        }
+        if isOpenF1 { openF1AccessRetryAt = nil }
     }
 
     private func readCache(at url: URL) -> HTTPPayload? {
@@ -97,12 +175,16 @@ actor CachedHTTPClient {
 
 final class F1API: @unchecked Sendable {
     private let client: CachedHTTPClient
+    let openF1Auth: OpenF1Authentication
     private let decoder = JSONDecoder()
     private let base = "https://api.jolpi.ca/ergast/f1"
 
     init(client: CachedHTTPClient = CachedHTTPClient()) {
         self.client = client
+        self.openF1Auth = client.openF1Auth
     }
+
+    func testOpenF1Connection() async throws { try await client.testOpenF1Connection() }
 
     func loadDashboard(refreshMinutes: Int, force: Bool = false, now: Date = Date()) async throws -> DashboardData {
         var calendarPayload = try await fetch("\(base)/current/races/?format=json&limit=100", key: "calendar-current", ttl: 12 * .hour, force: force)
@@ -120,9 +202,17 @@ final class F1API: @unchecked Sendable {
         }
 
         let season = races.first?.season ?? String(Calendar.current.component(.year, from: now))
-        async let sessionsPayload = try? fetch("https://api.openf1.org/v1/sessions?year=\(season)", key: "openf1-sessions-\(season)", ttl: 6 * .hour, force: force)
+        async let sessionsPayload: Result<HTTPPayload, Error> = {
+            do {
+                return .success(try await self.fetch("https://api.openf1.org/v1/sessions?year=\(season)", key: "openf1-sessions-\(season)", ttl: 6 * .hour, force: force))
+            } catch { return .failure(error) }
+        }()
         async let standingsPayload = try? fetch("\(base)/\(season)/driverstandings/?format=json&limit=100", key: "driver-standings-\(season)", ttl: TimeInterval(max(5, refreshMinutes)) * .minute, force: force)
-        let (sessionResult, standingsResult) = await (sessionsPayload, standingsPayload)
+        let (sessionOutcome, standingsResult) = await (sessionsPayload, standingsPayload)
+        let sessionResult = try? sessionOutcome.get()
+        let liveUnavailableReason: String?
+        if case .failure(let error) = sessionOutcome { liveUnavailableReason = error.localizedDescription }
+        else { liveUnavailableReason = nil }
 
         if let sessionResult, let openSessions = try? parseOpenF1Sessions(sessionResult.data) {
             races = races.map { Self.refine($0, with: openSessions) }
@@ -159,7 +249,8 @@ final class F1API: @unchecked Sendable {
             qualifying: qualifying,
             raceDistance: distance,
             stale: payloads.contains(where: \.stale),
-            lastUpdatedAt: payloads.map(\.fetchedAt).max() ?? now
+            lastUpdatedAt: payloads.map(\.fetchedAt).max() ?? now,
+            liveUnavailableReason: liveUnavailableReason
         )
     }
 
