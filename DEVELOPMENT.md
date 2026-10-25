@@ -23,6 +23,8 @@ F1_CODE_SIGN_IDENTITY='Developer ID Application: Your Name (TEAMID)' ./scripts/b
 
 Ad-hoc signatures change identity with the executable, so Keychain may require approval again after a rebuild. Automatic credential reads suppress Keychain UI and leave live timing paused when approval is needed. **Settings → OpenF1 Live Timing → Authorize Saved Credentials** allows an interactive read and tests the saved account. Cancelling leaves the credentials untouched. The small `KeychainSupport` compatibility target scopes the legacy login-Keychain interaction flag to a synchronous read; modern `LAContext` flags alone do not protect existing file-based Keychain items from prompts.
 
+During an ongoing race or sprint, run `swift run F1Live --live-smoke-test` to verify authenticated timing across six polls at 12-second intervals, including driver coverage, freshness, advancing timestamps, race control, and detail refreshes. This explicit diagnostic can show a macOS Keychain prompt and keeps the authorized connection in one process, so an Allow-once approval works. It prints timing summaries without credentials or tokens. The normal `--api-smoke-test` checks calendar and historical data and never prompts for Keychain access.
+
 ## Package a release
 
 Update `CFBundleShortVersionString` and the monotonically increasing `CFBundleVersion` in `Sources/F1Live/Resources/Info.plist`, then update `INSTALL.md` and `RELEASE_NOTES.md`.

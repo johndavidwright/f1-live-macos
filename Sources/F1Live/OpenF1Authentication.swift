@@ -164,7 +164,7 @@ actor OpenF1Authentication {
         reset()
     }
 
-    // Only the explicit Settings action may ask macOS to display approval UI.
+    // Only explicit Settings or live-diagnostic actions may display approval UI.
     func authorizeSavedCredentials() throws {
         try loadCredentials(allowingInteraction: true)
     }

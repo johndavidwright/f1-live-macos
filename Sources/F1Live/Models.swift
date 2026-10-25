@@ -16,6 +16,7 @@ struct RaceSession: Identifiable, Hashable, Sendable {
     var sessionKey: Int?
 
     var id: String { key }
+    var usesRaceControlEnd: Bool { key == "race" || key == "sprint" }
 
     func state(at now: Date) -> SessionState {
         if dateOnly {
@@ -60,14 +61,20 @@ struct Race: Identifiable, Hashable, Sendable {
         sessions.first { $0.state(at: now) == .live }
     }
 
-    func liveFeedSession(at now: Date) -> RaceSession? {
-        sessions.first {
-            // The calendar can identify an active session even when OpenF1
-            // refuses the request that would provide its timing-feed key.
-            guard !$0.dateOnly, now >= $0.startAt else { return false }
-            let grace = $0.exactEnd ? 30.0 * .minute : 0
-            return now <= $0.endAt.addingTimeInterval(grace)
+    func liveFeedSession(at now: Date, completedSessions: [Int: Date] = [:]) -> RaceSession? {
+        // A later session supersedes an earlier session's buffer or overrun.
+        guard let session = sessions.filter({ !$0.dateOnly && now >= $0.startAt }).max(by: { $0.startAt < $1.startAt }) else { return nil }
+        if let key = session.sessionKey, let finishedAt = completedSessions[key] {
+            return now <= finishedAt.addingTimeInterval(30 * .minute) ? session : nil
         }
+        // The calendar can identify an active session without an OpenF1 key,
+        // but its end time cannot establish when a delayed race really ends.
+        let grace = session.exactEnd ? 30.0 * .minute : 0
+        // Bound a missing/cancelled race feed so it cannot poll indefinitely.
+        let end = session.usesRaceControlEnd && session.sessionKey != nil
+            ? max(session.endAt.addingTimeInterval(grace), session.startAt.addingTimeInterval(6 * .hour))
+            : session.endAt.addingTimeInterval(grace)
+        return now <= end ? session : nil
     }
 
     func nextSession(at now: Date) -> RaceSession? {
@@ -212,6 +219,10 @@ struct RaceControlStatus: Sendable {
     static let running = RaceControlStatus(label: "RUNNING", kind: "green", at: nil)
 }
 
+enum LiveDetail: CaseIterable, Hashable, Sendable {
+    case drivers, pits, laps
+}
+
 struct LiveBatch: Sendable {
     let positions: [TimedPosition]
     let intervals: [TimedInterval]
@@ -219,6 +230,9 @@ struct LiveBatch: Sendable {
     let pits: [Int: PitSummary]?
     let currentLap: Int?
     let raceControl: RaceControlStatus?
+    var positionPolledAt: Date? = nil
+    var refreshedDetails: Set<LiveDetail> = []
+    var warning: String? = nil
 }
 
 struct LiveRow: Identifiable, Sendable {
@@ -245,12 +259,16 @@ struct LiveTimingState: Sendable {
     var status = RaceControlStatus.running
     var lastUpdateAt: Date?
     var lastPollAt: Date?
-    var lastDetailPollAt: Date?
+    var lastPositionPollAt: Date?
+    var lastDetailPolls: [LiveDetail: Date] = [:]
     var consecutiveEmptyPolls = 0
 
-    func needsDetailRefresh(at now: Date) -> Bool {
-        guard !drivers.isEmpty, let lastDetailPollAt else { return true }
-        return now.timeIntervalSince(lastDetailPollAt) >= 55
+    func detailsNeedingRefresh(at now: Date) -> Set<LiveDetail> {
+        Set(LiveDetail.allCases.filter {
+            if $0 == .drivers && drivers.isEmpty { return true }
+            guard let last = lastDetailPolls[$0] else { return true }
+            return now.timeIntervalSince(last) >= 55
+        })
     }
 
     func freshnessWarning(at now: Date, refreshSeconds: Int) -> String? {
@@ -288,7 +306,7 @@ struct LiveTimingState: Sendable {
         }.sorted { $0.position < $1.position }
     }
 
-    mutating func merge(_ batch: LiveBatch, polledAt: Date, includedDetails: Bool = false) {
+    mutating func merge(_ batch: LiveBatch, polledAt: Date) {
         for item in batch.positions {
             if let oldAt = positions[item.driverNumber]?.at, item.at == nil || item.at! < oldAt { continue }
             positions[item.driverNumber] = item
@@ -300,9 +318,13 @@ struct LiveTimingState: Sendable {
         if let incoming = batch.drivers, !incoming.isEmpty { drivers = incoming }
         if let incoming = batch.pits { pits = incoming }
         if let lap = batch.currentLap { currentLap = max(currentLap, lap) }
-        if let control = batch.raceControl { status = control }
+        if let control = batch.raceControl,
+           status.at == nil || (control.at != nil && control.at! >= status.at!) {
+            status = control
+        }
         lastPollAt = polledAt
-        if includedDetails { lastDetailPollAt = polledAt }
+        if let time = batch.positionPolledAt { lastPositionPollAt = time }
+        for detail in batch.refreshedDetails { lastDetailPolls[detail] = polledAt }
 
         // A successful request is not proof of fresh data: overlapping query
         // windows can keep returning the same old rows, or an empty response.

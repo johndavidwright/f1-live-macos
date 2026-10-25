@@ -63,6 +63,12 @@ import Testing
 @Test func liveDetailsKeepRefreshing() throws { try LiveTimingSelfTests.detailRefreshCadence() }
 @Test func liveFeedDetectsEmptyAndRepeatedResponses() throws { try LiveTimingSelfTests.emptyAndRepeatedResponses() }
 @Test func liveFeedHandlesTimestamps() throws { try LiveTimingSelfTests.timestampHandling() }
+@Test @MainActor func midraceTimingRecoversEveryDriver() async throws { try await LiveTimingRegressionSelfTests.joiningMidraceAndRecoveringAfterSleep() }
+@Test @MainActor func partialTimingFailuresPreserveSuccessfulFeeds() async throws { try await LiveTimingRegressionSelfTests.partialFailuresPreserveTiming() }
+@Test @MainActor func initialDetailFailureStillDisplaysTiming() async throws { try await LiveTimingRegressionSelfTests.initialDetailFailureStillShowsTower() }
+@Test @MainActor func liveTimingRetiresCancelledAndUnauthorizedBatches() async throws { try await LiveTimingRegressionSelfTests.cancellationAndAccessRestrictionsRetireBatch() }
+@Test @MainActor func trackStatusUsesRecognizedControlEvents() async throws { try await LiveTimingRegressionSelfTests.raceControlUsesRecognizedEvents() }
+@Test @MainActor func delayedRaceTimingFollowsTheActualFinish() async throws { try await LiveTimingRegressionSelfTests.extendedRaceUsesCompletionSignals() }
 @Test @MainActor func menuBarReturnsToCountdownWhenSessionEnds() async throws { try await MenuBarSelfTests.sessionEndRestoresCountdown() }
 @Test func openF1AccessErrorsAndRecovery() async throws { try await F1APISelfTests.run() }
 @Test @MainActor func optionalOpenF1Credentials() async throws { try await OpenF1AuthSelfTests.run() }

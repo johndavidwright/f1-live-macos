@@ -17,6 +17,16 @@ enum EntryPoint {
             return
         }
 
+        if CommandLine.arguments.contains("--live-smoke-test") {
+            do {
+                try await LiveTimingSmokeTest.run()
+            } catch {
+                fputs("Live timing check failed: \(error.localizedDescription)\n", stderr)
+                Foundation.exit(1)
+            }
+            return
+        }
+
         if CommandLine.arguments.contains("--api-smoke-test") {
             do {
                 let api = F1API()
@@ -27,7 +37,7 @@ enum EntryPoint {
                    let historical = data.races[data.raceIndex - 1].raceSession,
                    let key = historical.sessionKey {
                     let sampleAt = historical.startAt.addingTimeInterval(60 * .minute)
-                    let batch = try await api.loadLive(sessionKey: key, refreshSeconds: 12, currentLap: 1, includeSlow: true, now: sampleAt)
+                    let batch = try await api.loadLive(sessionKey: key, refreshSeconds: 12, currentLap: 1, now: sampleAt)
                     guard !(batch.drivers ?? [:]).isEmpty, !batch.positions.isEmpty else {
                         throw SelfTestError.failed("historical live feed returned no drivers or positions")
                     }
@@ -137,6 +147,7 @@ enum SelfTests {
 
         try LoginItemSelfTests.run()
         try LiveTimingSelfTests.run()
+        try await LiveTimingRegressionSelfTests.run()
         try await MenuBarSelfTests.sessionEndRestoresCountdown()
         try await F1APISelfTests.run()
         try await OpenF1AuthSelfTests.run()

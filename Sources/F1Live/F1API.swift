@@ -254,42 +254,75 @@ final class F1API: @unchecked Sendable {
         )
     }
 
-    func loadLive(sessionKey: Int, refreshSeconds: Int, currentLap: Int, includeSlow: Bool, now: Date = Date()) async throws -> LiveBatch {
+    func loadLive(sessionKey: Int, refreshSeconds: Int, currentLap: Int,
+                  details: Set<LiveDetail> = Set(LiveDetail.allCases), positionSince: Date? = nil,
+                  now: Date = Date()) async throws -> LiveBatch {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         let upper = formatter.string(from: now.addingTimeInterval(1))
-        let positionLower = formatter.string(from: now.addingTimeInterval(-20 * .minute))
         let intervalWindow = TimeInterval(max(20, refreshSeconds * 2 + 5))
         let intervalLower = formatter.string(from: now.addingTimeInterval(-intervalWindow))
+        let session = ["session_key": "\(sessionKey)"]
+        var unavailable: [String] = []
 
-        // OpenF1's public endpoint applies a shared request budget. Keep these
-        // calls sequential, matching the upstream plugin's batched shell loop.
-        let positionData = try await client.live(try makeOpenF1URL("position", ["session_key": "\(sessionKey)", "date>": positionLower, "date<": upper]))
-        let intervalData = try await client.live(try makeOpenF1URL("intervals", ["session_key": "\(sessionKey)", "date>": intervalLower, "date<": upper]))
-
-        if includeSlow {
-            let controlLower = formatter.string(from: now.addingTimeInterval(-45 * .minute))
-            let driverData = try await client.live(try makeOpenF1URL("drivers", ["session_key": "\(sessionKey)"]))
-            let pitData = try await client.live(try makeOpenF1URL("pit", ["session_key": "\(sessionKey)"]))
-            let controlData = try await client.live(try makeOpenF1URL("race_control", ["session_key": "\(sessionKey)", "date>": controlLower, "date<": upper]))
-            let lapData = try await client.live(try makeOpenF1URL("laps", ["session_key": "\(sessionKey)", "lap_number>": "\(max(1, currentLap))"]))
-            return LiveBatch(
-                positions: try parsePositions(positionData),
-                intervals: try parseIntervals(intervalData),
-                drivers: try parseDrivers(driverData),
-                pits: try parsePits(pitData),
-                currentLap: try parseCurrentLap(lapData),
-                raceControl: try parseRaceControl(controlData)
-            )
+        // Fetch sequentially within OpenF1's request budget, but retain each
+        // successful endpoint when another endpoint fails or cannot be decoded.
+        func load<Value>(_ path: String, label: String, items: [String: String],
+                         decode: (Data) throws -> Value) async throws -> Value? {
+            do {
+                let data = try await client.live(try makeOpenF1URL(path, items))
+                try Task.checkCancellation()
+                return try decode(data)
+            } catch {
+                try Task.checkCancellation()
+                // Auth changes retire the entire in-flight connection. Never
+                // merge responses from credentials that have been removed.
+                if error is CancellationError || error is OpenF1AuthError ||
+                    (error as? F1APIError) == .openF1AccessRestricted { throw error }
+                unavailable.append(label)
+                return nil
+            }
         }
 
+        var positionItems = session.merging(["date<": upper]) { _, new in new }
+        // A cold connection needs every driver's last position, even if it
+        // has not changed recently. Subsequent polls overlap the last successful
+        // query, covering sleep/outages without downloading the whole session.
+        if let positionSince {
+            positionItems["date>"] = formatter.string(from: positionSince.addingTimeInterval(-intervalWindow))
+        }
+        let positions = try await load("position", label: "positions", items: positionItems, decode: parsePositions)
+        let intervals = try await load("intervals", label: "intervals",
+                                       items: session.merging(["date>": intervalLower, "date<": upper]) { _, new in new },
+                                       decode: parseIntervals)
+        // Control messages are sparse, so read the session history on each
+        // fast poll. A long red flag or a late join must not lose track status.
+        let control = try await load("race_control", label: "race control",
+                                     items: session.merging(["date<": upper]) { _, new in new }, decode: parseRaceControl)
+        var drivers: [Int: LiveDriver]?
+        var pits: [Int: PitSummary]?
+        var lap: Int?
+        var refreshed: Set<LiveDetail> = []
+        if details.contains(.drivers) {
+            drivers = try await load("drivers", label: "driver details", items: session, decode: parseDrivers)
+            if drivers != nil { refreshed.insert(.drivers) }
+        }
+        if details.contains(.pits) {
+            pits = try await load("pit", label: "pit stops", items: session, decode: parsePits)
+            if pits != nil { refreshed.insert(.pits) }
+        }
+        if details.contains(.laps) {
+            let result: Int?? = try await load("laps", label: "laps",
+                                               items: session.merging(["lap_number>": "\(max(0, currentLap))"]) { _, new in new },
+                                               decode: parseCurrentLap)
+            lap = result ?? nil
+            if result != nil { refreshed.insert(.laps) }
+        }
         return LiveBatch(
-            positions: try parsePositions(positionData),
-            intervals: try parseIntervals(intervalData),
-            drivers: nil,
-            pits: nil,
-            currentLap: nil,
-            raceControl: nil
+            positions: positions ?? [], intervals: intervals ?? [], drivers: drivers, pits: pits,
+            currentLap: lap, raceControl: control ?? nil, positionPolledAt: positions == nil ? nil : now,
+            refreshedDetails: refreshed,
+            warning: unavailable.isEmpty ? nil : "Timing partially unavailable · \(unavailable.joined(separator: ", ")). Retrying automatically."
         )
     }
 
@@ -608,24 +641,46 @@ private extension F1API {
 
     func parseRaceControl(_ data: Data) throws -> RaceControlStatus? {
         let rows = try decoder.decode([ControlDTO].self, from: data)
-        for row in rows.reversed() {
+        let ordered = rows.enumerated().map { (row: $0.element, at: $0.element.date.flatMap(parseISO), order: $0.offset) }
+            .sorted {
+                if $0.at == $1.at { return $0.order > $1.order }
+                return ($0.at ?? .distantPast) > ($1.at ?? .distantPast)
+            }
+        for item in ordered {
+            let row = item.row
             let category = row.category?.uppercased() ?? ""
             let flag = row.flag?.uppercased() ?? ""
             let scope = row.scope?.uppercased() ?? ""
             let message = row.message?.uppercased() ?? ""
-            let at = row.date.flatMap(parseISO)
-            if category == "SAFETYCAR" || message.contains("SAFETY CAR") {
-                if message.contains("VIRTUAL") { return RaceControlStatus(label: message.contains("ENDING") ? "VSC ENDING" : "VIRTUAL SAFETY CAR", kind: "caution", at: at) }
-                return RaceControlStatus(label: "SAFETY CAR", kind: "caution", at: at)
+            let at = item.at
+            func status(_ label: String, _ kind: String) -> RaceControlStatus {
+                RaceControlStatus(label: label, kind: kind, at: at)
+            }
+            if category == "SAFETYCAR" {
+                if message == "SAFETY CAR IN PIT LANE" || message == "SAFETY CAR WITHDRAWN" || message == "VIRTUAL SAFETY CAR ENDED" {
+                    return status("RUNNING", "green")
+                }
+                if message.hasPrefix("VIRTUAL SAFETY CAR ENDING") { return status("VSC ENDING", "caution") }
+                if message.hasPrefix("VIRTUAL SAFETY CAR DEPLOYED") { return status("VIRTUAL SAFETY CAR", "caution") }
+                if message.hasPrefix("SAFETY CAR IN THIS LAP") { return status("SC ENDING", "caution") }
+                if message.hasPrefix("SAFETY CAR DEPLOYED") { return status("SAFETY CAR", "caution") }
+            }
+            if category == "SESSIONSTATUS" {
+                switch message {
+                case "SESSION FINISHED", "SESSION ENDED", "SESSION CANCELLED": return status("SESSION FINISHED", "finished")
+                case "SESSION ABORTED", "SESSION STOPPED", "SESSION SUSPENDED": return status("SESSION STOPPED", "stopped")
+                case "SESSION STARTED", "SESSION RESUMED": return status("RUNNING", "green")
+                default: break
+                }
             }
             if category == "FLAG", scope == "TRACK" {
-                if flag == "RED" { return RaceControlStatus(label: "RED FLAG", kind: "stopped", at: at) }
-                if flag == "CHEQUERED" { return RaceControlStatus(label: "CHEQUERED FLAG", kind: "finished", at: at) }
-                if flag.contains("YELLOW") { return RaceControlStatus(label: "YELLOW FLAG", kind: "caution", at: at) }
-                if flag == "GREEN" || flag == "CLEAR" { return .running }
+                if flag == "RED" { return status("RED FLAG", "stopped") }
+                if flag == "CHEQUERED" { return status("CHEQUERED FLAG", "finished") }
+                if flag.contains("YELLOW") { return status("YELLOW FLAG", "caution") }
+                if flag == "GREEN" || flag == "CLEAR" { return status("RUNNING", "green") }
             }
         }
-        return rows.isEmpty ? nil : .running
+        return nil
     }
 
     func parseErgast(date: String, time: String?) -> (date: Date, dateOnly: Bool)? {

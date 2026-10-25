@@ -13,16 +13,16 @@ enum LiveTimingSelfTests {
         var detailPolls: [Int] = []
         for second in stride(from: 0, through: 144, by: 12) {
             let time = start.addingTimeInterval(TimeInterval(second))
-            let includeDetails = state.needsDetailRefresh(at: time)
+            let includeDetails = !state.detailsNeedingRefresh(at: time).isEmpty
             if includeDetails { detailPolls.append(second) }
-            state.merge(batch(at: time, details: includeDetails, lap: second / 12 + 1), polledAt: time, includedDetails: includeDetails)
+            state.merge(batch(at: time, details: includeDetails, lap: second / 12 + 1), polledAt: time)
         }
         try check(detailPolls == [0, 60, 120], "fast polls do not postpone detail refreshes")
         try check(state.currentLap == 11 && state.pits[44]?.count == 11, "lap counts and pits continue updating")
         try check(state.status.label == "CONTROL 11", "race-control messages continue updating")
-        try check(state.lastDetailPollAt == start.addingTimeInterval(120), "detail timestamp is independent of last poll")
+        try check(state.lastDetailPolls.values.allSatisfy { $0 == start.addingTimeInterval(120) }, "detail timestamps are independent of last poll")
         try check(state.lastPollAt == start.addingTimeInterval(144), "fast polling keeps its own timestamp")
-        try check(state.needsDetailRefresh(at: start.addingTimeInterval(600)), "details refresh after sleep or an outage")
+        try check(state.detailsNeedingRefresh(at: start.addingTimeInterval(600)) == Set(LiveDetail.allCases), "details refresh after sleep or an outage")
     }
 
     static func emptyAndRepeatedResponses() throws {
@@ -67,7 +67,8 @@ enum LiveTimingSelfTests {
             drivers: details ? [44: LiveDriver(number: 44, acronym: "HAM", fullName: "Lewis Hamilton", teamName: "Ferrari", teamColour: "e8002d")] : nil,
             pits: details ? [44: PitSummary(count: lap)] : nil,
             currentLap: details ? lap : nil,
-            raceControl: details ? RaceControlStatus(label: "CONTROL \(lap)", kind: "caution", at: time) : nil
+            raceControl: details ? RaceControlStatus(label: "CONTROL \(lap)", kind: "caution", at: time) : nil,
+            refreshedDetails: details ? Set(LiveDetail.allCases) : []
         )
     }
 
