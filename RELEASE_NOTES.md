@@ -1,11 +1,14 @@
-# F1 Live 0.2.5
+# F1 Live 0.2.6
 
 Preview release for macOS 14 or later, supporting Apple-silicon and Intel Macs.
 
 ## Highlights
 
-- Fixes **F1 LIVE** remaining in the menu bar for up to 30 minutes after a session ends. The label now returns to the next-session countdown at the session's end time, without waiting for a data refresh.
-- Updates the menu-bar tooltip to identify the next session at the same time. For example, after FP2 ends, both the label and tooltip count down to FP3.
+- Shows every driver's last known position when joining a race midway through, including drivers whose positions have not changed recently. Position updates also recover after sleep or a connection outage.
+- Keeps the timing tower updating when pit, driver, lap, interval, or race-control data is temporarily unavailable. A warning identifies the missing data while failed feeds retry independently.
+- Uses recognized race-control events for track status, so a steward notice mentioning a safety car cannot replace a red flag. Race-control updates now refresh alongside positions and intervals.
+- Keeps live timing available during delayed or red-flagged races and follows the actual finish signal, including a 30-minute window for final updates. The menu-bar live label clears when the race finishes.
+- Adds six regression tests and a repeatable live-race diagnostic. Verified during the 2026 United States Grand Prix with all 22 drivers across six polls and timing data 2–3 seconds old.
 
 F1 Live remains free. The calendar, standings, circuit maps, qualifying results, countdowns, Fantasy deadlines, and reminders work without an OpenF1 account. OpenF1 subscriptions are managed directly by OpenF1.
 

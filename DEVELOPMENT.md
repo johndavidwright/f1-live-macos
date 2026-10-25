@@ -11,7 +11,15 @@ swift run F1Live
 open "dist/F1 Live.app"
 ```
 
-`build-app.sh` produces a universal app containing native Apple-silicon and Intel executables. It defaults to ad-hoc signing. The Swift Testing suite runs through `swift test` with a full Xcode installation and in GitHub Actions; Command Line Tools alone can compile that suite but does not include Apple's test-bundle runner.
+`build-app.sh` produces a universal app containing native Apple-silicon and Intel executables. It defaults to ad-hoc signing. Run the Swift Testing suite with `swift test --enable-swift-testing --disable-xctest`. Use the testing library supplied by the selected toolchain; forcing a different installation's framework path can mix incompatible testing macros and runtime APIs.
+
+With only Command Line Tools installed, expose its testing framework to both the tests and generated runner:
+
+```sh
+swift test --enable-swift-testing --disable-xctest \
+  -Xswiftc -F -Xswiftc /Library/Developer/CommandLineTools/Library/Developer/Frameworks \
+  -Xlinker -rpath -Xlinker /Library/Developer/CommandLineTools/Library/Developer/Frameworks
+```
 
 For a consistent app identity across rebuilds, install your Developer ID Application certificate and private key, then use the same signing identity for every build:
 

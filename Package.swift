@@ -29,14 +29,7 @@ let package = Package(
         ),
         .testTarget(
             name: "F1LiveTests",
-            dependencies: ["F1Live"],
-            // Command Line Tools ships Swift Testing here but does not add
-            // its own framework directory to test-target imports.
-            swiftSettings: [.unsafeFlags(["-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"])],
-            linkerSettings: [.unsafeFlags([
-                "-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-                "-Xlinker", "-rpath", "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"
-            ])]
+            dependencies: ["F1Live"]
         )
     ],
     swiftLanguageModes: [.v5]
