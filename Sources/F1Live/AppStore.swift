@@ -340,8 +340,13 @@ final class AppStore: ObservableObject {
 
     private func applyAutoLive() {
         guard settings.autoLive, !manualLiveChoice else { return }
-        liveMode = openF1Account.hasCredentials && activeFeedSession?.key == "race"
-            && activeFeedSession?.sessionKey == race?.raceSession?.sessionKey
+        guard let session = activeFeedSession, session.key == "race" else {
+            liveMode = false
+            return
+        }
+        let finished = session.sessionKey.flatMap { completedLiveSessions[$0] } != nil
+        liveMode = openF1Account.hasCredentials
+            && (!finished || session.sessionKey == race?.raceSession?.sessionKey)
     }
 
     private func settingsDidChange() {

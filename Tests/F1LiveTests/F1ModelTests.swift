@@ -80,6 +80,7 @@ import Testing
 @Test @MainActor func liveTimingRetiresCancelledAndUnauthorizedBatches() async throws { try await LiveTimingRegressionSelfTests.cancellationAndAccessRestrictionsRetireBatch() }
 @Test @MainActor func trackStatusUsesRecognizedControlEvents() async throws { try await LiveTimingRegressionSelfTests.raceControlUsesRecognizedEvents() }
 @Test @MainActor func delayedRaceTimingFollowsTheActualFinish() async throws { try await LiveTimingRegressionSelfTests.extendedRaceUsesCompletionSignals() }
+@Test @MainActor func delayedRaceReconnectsAfterColdLaunch() async throws { try await LiveTimingRegressionSelfTests.delayedRaceReconnectsAutomatically() }
 @Test @MainActor func menuBarReturnsToCountdownWhenSessionEnds() async throws { try await MenuBarSelfTests.sessionEndRestoresCountdown() }
 @Test @MainActor func menuBarCountsDownToNextWeekendAfterRaceEnds() async throws { try await MenuBarSelfTests.raceEndRestoresCountdown() }
 @Test func openF1AccessErrorsAndRecovery() async throws { try await F1APISelfTests.run() }

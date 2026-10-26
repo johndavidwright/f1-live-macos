@@ -9,6 +9,7 @@ enum LiveTimingRegressionSelfTests {
         try await cancellationAndAccessRestrictionsRetireBatch()
         try await raceControlUsesRecognizedEvents()
         try await extendedRaceUsesCompletionSignals()
+        try await delayedRaceReconnectsAutomatically()
     }
 
     static func joiningMidraceAndRecoveringAfterSleep() async throws {
@@ -246,6 +247,30 @@ enum LiveTimingRegressionSelfTests {
             race.sessions[0].dateOnly = true
             try check(race.liveFeedSession(at: sampleTime) == nil, "date-only sessions never start a feed")
         }
+    }
+
+    static func delayedRaceReconnectsAutomatically() async throws {
+        let stub = LiveTimingFeedStub()
+        let cache = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "F1LiveDelayedAutoLive.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: cache)
+        }
+        let api = makeAPI(stub, cache: cache)
+        let store = AppStore(settings: SettingsStore(defaults: defaults), api: api)
+        let overrun = sampleTime.addingTimeInterval(3 * .hour)
+        store.tick(at: overrun)
+        await store.refresh()
+        try check(store.race == nil && store.activeFeedSession?.sessionKey == 42,
+                  "a cold launch can discover a possible overrun after the estimated recap window")
+        // Save only to the isolated memory store after loading the fixture;
+        // no token or network request is needed to exercise automatic selection.
+        try await api.openF1Auth.save(clientID: "test-client", clientSecret: "test-secret")
+        await store.openF1Account.refreshStatus()
+        store.tick(at: overrun)
+        try check(store.liveMode, "automatic live timing reconnects before the first overrun poll")
     }
 
     private static func makeAPI(_ stub: LiveTimingFeedStub, cache: URL? = nil) -> F1API {
