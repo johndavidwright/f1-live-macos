@@ -338,10 +338,11 @@ final class F1API: @unchecked Sendable {
         return url
     }
 
-    static func currentRaceIndex(in races: [Race], at now: Date) -> Int {
+    static func currentRaceIndex(in races: [Race], at now: Date, completedSessions: [Int: Date] = [:]) -> Int {
         races.firstIndex {
-            let end = $0.raceSession?.endAt ?? $0.raceStartAt
-            return now < end.addingTimeInterval(.day)
+            let actualEnd = $0.raceSession?.sessionKey.flatMap { completedSessions[$0] }
+            let end = actualEnd ?? $0.raceSession?.endAt ?? $0.raceStartAt
+            return now < end.addingTimeInterval(Race.postRaceWindow)
         } ?? -1
     }
 

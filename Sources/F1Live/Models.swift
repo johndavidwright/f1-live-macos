@@ -30,6 +30,8 @@ struct RaceSession: Identifiable, Hashable, Sendable {
 }
 
 struct Race: Identifiable, Hashable, Sendable {
+    static let postRaceWindow: TimeInterval = 30 * .minute
+
     let season: String
     let round: Int
     let name: String
@@ -65,7 +67,7 @@ struct Race: Identifiable, Hashable, Sendable {
         // A later session supersedes an earlier session's buffer or overrun.
         guard let session = sessions.filter({ !$0.dateOnly && now >= $0.startAt }).max(by: { $0.startAt < $1.startAt }) else { return nil }
         if let key = session.sessionKey, let finishedAt = completedSessions[key] {
-            return now <= finishedAt.addingTimeInterval(30 * .minute) ? session : nil
+            return now <= finishedAt.addingTimeInterval(Self.postRaceWindow) ? session : nil
         }
         // The calendar can identify an active session without an OpenF1 key,
         // but its end time cannot establish when a delayed race really ends.

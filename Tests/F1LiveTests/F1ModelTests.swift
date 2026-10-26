@@ -11,11 +11,22 @@ import Testing
     #expect(session.state(at: start.addingTimeInterval(100)) == .done)
 }
 
-@Test func currentRaceStaysVisibleForOneDay() {
+@Test func currentRaceStaysVisibleForThirtyMinutes() {
     let race = makeRace(start: fixtureDate(10_000))
     let finish = race.raceSession!.endAt
-    #expect(F1API.currentRaceIndex(in: [race], at: finish.addingTimeInterval(.day - 1)) == 0)
-    #expect(F1API.currentRaceIndex(in: [race], at: finish.addingTimeInterval(.day)) == -1)
+    #expect(F1API.currentRaceIndex(in: [race], at: finish.addingTimeInterval(30 * .minute - 1)) == 0)
+    #expect(F1API.currentRaceIndex(in: [race], at: finish.addingTimeInterval(30 * .minute)) == -1)
+}
+
+@Test func raceRecapUsesTheActualFinish() {
+    var race = makeRace(start: fixtureDate(10_000))
+    race.sessions[0].sessionKey = 42
+    for duration in [60.0 * .minute, 4.0 * .hour] {
+        let finish = race.raceStartAt.addingTimeInterval(duration)
+        let completed = [42: finish]
+        #expect(F1API.currentRaceIndex(in: [race], at: finish.addingTimeInterval(30 * .minute - 1), completedSessions: completed) == 0)
+        #expect(F1API.currentRaceIndex(in: [race], at: finish.addingTimeInterval(30 * .minute), completedSessions: completed) == -1)
+    }
 }
 
 @Test func openF1RefinementAddsExactEndAndSessionKey() {
@@ -70,6 +81,7 @@ import Testing
 @Test @MainActor func trackStatusUsesRecognizedControlEvents() async throws { try await LiveTimingRegressionSelfTests.raceControlUsesRecognizedEvents() }
 @Test @MainActor func delayedRaceTimingFollowsTheActualFinish() async throws { try await LiveTimingRegressionSelfTests.extendedRaceUsesCompletionSignals() }
 @Test @MainActor func menuBarReturnsToCountdownWhenSessionEnds() async throws { try await MenuBarSelfTests.sessionEndRestoresCountdown() }
+@Test @MainActor func menuBarCountsDownToNextWeekendAfterRaceEnds() async throws { try await MenuBarSelfTests.raceEndRestoresCountdown() }
 @Test func openF1AccessErrorsAndRecovery() async throws { try await F1APISelfTests.run() }
 @Test @MainActor func optionalOpenF1Credentials() async throws { try await OpenF1AuthSelfTests.run() }
 @Test @MainActor func notificationsRequireOptIn() async throws { try await NotificationSelfTests.firstUseAndOptIn() }

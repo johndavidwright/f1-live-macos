@@ -196,6 +196,9 @@ enum LiveTimingRegressionSelfTests {
         await store.pollLiveIfNeeded()
         try check(store.live.rows.count == 2 && store.live.status.kind == "stopped", "a long red flag still receives timing")
         try check(store.menuBarTitle == "F1 LIVE" && store.weekend.kind == .live, "an extended race remains live in the menu bar and overview")
+        let raceFixture = store.race!
+        await store.refresh()
+        try check(store.race?.id == raceFixture.id && store.menuBarTitle == "F1 LIVE", "refreshing the calendar cannot retire a running delayed race")
 
         let resumedAt = overrun.addingTimeInterval(12)
         await stub.setBody("race_control", "[{\"category\":\"SessionStatus\",\"message\":\"SESSION RESUMED\",\"date\":\"\(iso(resumedAt))\"}]")
@@ -212,6 +215,7 @@ enum LiveTimingRegressionSelfTests {
         try check(store.activeFeedSession?.sessionKey == 42, "the post-race buffer follows the actual finish")
         store.tick(at: finishedAt.addingTimeInterval(30 * .minute + 1))
         try check(store.activeFeedSession == nil, "polling ends after the actual finish buffer")
+        try check(store.race == nil, "the dashboard leaves the last race after the actual finish buffer")
         store.tick(at: finishedAt.addingTimeInterval(30 * .minute + 2))
         await store.refresh()
         let requestsBefore = await stub.requestedURLs.count
@@ -230,7 +234,8 @@ enum LiveTimingRegressionSelfTests {
 
         store.tick(at: date("2026-09-06T19:00:01Z"))
         try check(store.race?.liveFeedSession(at: store.now) == nil, "a missing completion signal has a finite fallback")
-        if var race = store.race {
+        do {
+            var race = raceFixture
             let start = race.sessions[0].startAt
             race.sessions.insert(RaceSession(key: "sprint", shortName: "SPRINT", name: "Sprint", group: "Sprint",
                                              startAt: start.addingTimeInterval(-3 * .hour), endAt: start.addingTimeInterval(-2 * .hour),

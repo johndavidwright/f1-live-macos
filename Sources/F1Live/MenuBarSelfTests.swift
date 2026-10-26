@@ -2,6 +2,73 @@ import Foundation
 
 enum MenuBarSelfTests {
     @MainActor
+    static func raceEndRestoresCountdown() async throws {
+        for exactEnd in [true, false] {
+            for hasNextRace in [true, false] {
+                let cache = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                let suiteName = "F1LiveRaceEndTests.\(UUID().uuidString)"
+                let defaults = UserDefaults(suiteName: suiteName)!
+                defer {
+                    defaults.removePersistentDomain(forName: suiteName)
+                    try? FileManager.default.removeItem(at: cache)
+                }
+                let client = CachedHTTPClient(transport: { request in
+                    let url = request.url!
+                    let body: String
+                    if url.host == "api.jolpi.ca", url.path.contains("/current/races") {
+                        body = raceEndCalendar(hasNextRace: hasNextRace)
+                    } else if url.host == "api.jolpi.ca", url.path.contains("/2027/races") {
+                        body = "{\"MRData\":{\"RaceTable\":{\"Races\":[]}}}"
+                    } else if url.host == "api.openf1.org" {
+                        body = exactEnd ? raceEndSessions : "[]"
+                    } else {
+                        body = "[]"
+                    }
+                    return (Data(body.utf8), HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)!)
+                }, cacheDirectory: cache, auth: OpenF1Authentication(storage: MemoryOpenF1Credentials()))
+                let store = AppStore(settings: SettingsStore(defaults: defaults), api: F1API(client: client))
+                store.tick(at: date("2026-10-25T19:59:59Z"))
+                await store.refresh()
+                try check(store.race?.raceSession?.exactEnd == exactEnd, "race fixture uses the expected end source")
+                let finish = store.race!.raceSession!.endAt
+                store.tick(at: finish.addingTimeInterval(-1))
+                try check(store.menuBarTitle == "F1 LIVE", "the race stays live until its end")
+
+                // No refresh is needed to leave the finished race behind in
+                // the menu bar, even while its dashboard recap remains visible.
+                for (time, countdown) in [
+                    (finish, "F1 4d 20h"),
+                    (finish.addingTimeInterval(30 * .minute - 1), exactEnd ? "F1 4d 20h" : "F1 4d 19h"),
+                    (finish.addingTimeInterval(30 * .minute), exactEnd ? "F1 4d 20h" : "F1 4d 19h"),
+                    (date("2026-10-26T12:00:00Z"), "F1 4d 6h"),
+                    (date("2026-10-26T22:30:00Z"), "F1 3d 20h")
+                ] {
+                    store.tick(at: time)
+                    let inRecapWindow = time < finish.addingTimeInterval(30 * .minute)
+                    let expectedRace = inRecapWindow ? "United States Grand Prix" : (hasNextRace ? "Mexico City Grand Prix" : nil)
+                    try check(store.race?.name == expectedRace, "the dashboard advances after thirty minutes without a refresh")
+                    if inRecapWindow {
+                        try check(store.weekend.kind == .finished, "the completed race stays visible throughout its recap window")
+                    }
+                    try check(store.menuBarTitle == (hasNextRace ? countdown : "F1"), "a finished race never supplies a past countdown")
+                    if hasNextRace {
+                        try check(store.tooltip.hasPrefix("Mexico City Grand Prix — Practice 1 in "), "the tooltip names the next weekend and session")
+                    }
+                }
+                // A cold launch the following day must make the same selection.
+                let cold = AppStore(settings: SettingsStore(defaults: defaults), api: F1API(client: client))
+                cold.tick(at: date("2026-10-26T12:00:00Z"))
+                await cold.refresh()
+                try check(cold.race?.name == (hasNextRace ? "Mexico City Grand Prix" : nil), "a fresh launch skips yesterday's race")
+                try check(cold.menuBarTitle == (hasNextRace ? "F1 4d 6h" : "F1"), "a fresh launch counts down to the next weekend")
+                await store.refresh()
+                try check(store.menuBarTitle == (hasNextRace ? "F1 3d 20h" : "F1"), "refreshing after the recap window preserves the menu bar state")
+                try check(store.race?.name == (hasNextRace ? "Mexico City Grand Prix" : nil), "the dashboard advances after the recap window")
+            }
+        }
+    }
+
+    @MainActor
     static func sessionEndRestoresCountdown() async throws {
         // Exercise the menu bar through a clock tick, without a network refresh
         // or credentials. OpenF1 supplies an exact end; Jolpica alone estimates it.
@@ -53,6 +120,27 @@ enum MenuBarSelfTests {
     private static func check(_ value: @autoclosure () -> Bool, _ message: String) throws {
         if !value() { throw SelfTestError.failed(message) }
     }
+
+    private static func raceEndCalendar(hasNextRace: Bool) -> String {
+        let next = hasNextRace ? """
+        ,{"season":"2026","round":"19","raceName":"Mexico City Grand Prix",
+          "Circuit":{"circuitId":"rodriguez","circuitName":"Hermanos Rodriguez","Location":{"locality":"Mexico City","country":"Mexico"}},
+          "date":"2026-11-01","time":"20:00:00Z",
+          "FirstPractice":{"date":"2026-10-30","time":"18:30:00Z"}}
+        """ : ""
+        return """
+        {"MRData":{"RaceTable":{"Races":[{
+          "season":"2026","round":"18","raceName":"United States Grand Prix",
+          "Circuit":{"circuitId":"americas","circuitName":"Circuit of the Americas","Location":{"locality":"Austin","country":"USA"}},
+          "date":"2026-10-25","time":"20:00:00Z"
+        }\(next)]}}}
+        """
+    }
+
+    private static let raceEndSessions = """
+    [{"session_key":42,"meeting_key":10,"session_type":"Race","session_name":"Race",
+      "date_start":"2026-10-25T20:00:00Z","date_end":"2026-10-25T22:00:00Z"}]
+    """
 
     private static let calendar = """
     {"MRData":{"RaceTable":{"Races":[{

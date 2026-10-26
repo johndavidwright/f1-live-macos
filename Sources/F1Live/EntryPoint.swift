@@ -102,8 +102,8 @@ enum SelfTests {
 
         let race = fixtureRace(start: start)
         let finish = race.raceSession!.endAt
-        try check(F1API.currentRaceIndex(in: [race], at: finish.addingTimeInterval(.day - 1)) == 0, "post-race visibility")
-        try check(F1API.currentRaceIndex(in: [race], at: finish.addingTimeInterval(.day)) == -1, "season completion")
+        try check(F1API.currentRaceIndex(in: [race], at: finish.addingTimeInterval(30 * .minute - 1)) == 0, "post-race visibility")
+        try check(F1API.currentRaceIndex(in: [race], at: finish.addingTimeInterval(30 * .minute)) == -1, "season completion")
 
         let exactStart = race.raceStartAt.addingTimeInterval(120)
         let refined = F1API.refine(race, with: [OpenF1Session(sessionKey: 99, meetingKey: 10, type: "Race", name: "Race", startAt: exactStart, endAt: exactStart.addingTimeInterval(7_200))])
@@ -149,6 +149,7 @@ enum SelfTests {
         try LiveTimingSelfTests.run()
         try await LiveTimingRegressionSelfTests.run()
         try await MenuBarSelfTests.sessionEndRestoresCountdown()
+        try await MenuBarSelfTests.raceEndRestoresCountdown()
         try await F1APISelfTests.run()
         try await OpenF1AuthSelfTests.run()
         try await NotificationSelfTests.run()

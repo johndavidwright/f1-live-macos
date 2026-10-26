@@ -197,19 +197,11 @@ final class AppStore: ObservableObject {
         }
         do {
             let fresh = try await api.loadDashboard(refreshMinutes: settings.refreshMinutes, force: force, now: now)
-            let raceChanged = fresh.race?.id != lastRaceID
-            data = fresh
+            updateDashboard(fresh)
             settings.migrateLegacyFavoriteIfNeeded(from: fresh.standings)
-            if raceChanged {
-                lastRaceID = fresh.race?.id
-                live = LiveTimingState()
-                liveSessionKey = nil
-                completedLiveSessions = [:]
-                liveError = nil
-                manualLiveChoice = false
-            }
+            synchronizeLiveSession()
             applyAutoLive()
-            if settings.hasReminderSelections { await notificationController.schedule(data: fresh, now: now) }
+            if settings.hasReminderSelections, let data { await notificationController.schedule(data: data, now: now) }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -238,7 +230,14 @@ final class AppStore: ObservableObject {
         }
         return race?.weekendStatus(at: now) ?? WeekendStatus(label: "FORMULA 1", kind: .idle, session: nil)
     }
-    var activeFeedSession: RaceSession? { race?.liveFeedSession(at: now, completedSessions: completedLiveSessions) }
+    var activeFeedSession: RaceSession? {
+        // A delayed race can still be running after the calendar's estimated
+        // recap window. Keep discovering its feed even if the overview moved on.
+        for race in data?.races.reversed() ?? [] {
+            if let session = race.liveFeedSession(at: now, completedSessions: completedLiveSessions) { return session }
+        }
+        return nil
+    }
     private var displayLiveSession: RaceSession? {
         if let scheduled = race?.liveSession(at: now) {
             if scheduled.usesRaceControlEnd, let key = scheduled.sessionKey, completedLiveSessions[key] != nil { return nil }
@@ -258,22 +257,29 @@ final class AppStore: ObservableObject {
         }
         return live.freshnessWarning(at: now, refreshSeconds: settings.liveRefreshSeconds)
     }
+    private var nextMenuBarSession: (race: Race, session: RaceSession)? {
+        // The dashboard briefly retains a finished race. The menu bar should
+        // already count down to the next weekend, using the loaded calendar.
+        for race in data?.races ?? [] {
+            if let session = race.nextSession(at: now) { return (race, session) }
+        }
+        return nil
+    }
+
     var menuBarTitle: String {
         // The post-session buffer collects late updates without extending the
         // live label once the session has actually finished.
         if displayLiveSession != nil { return "F1 LIVE" }
-        if let next = race?.nextSession(at: now) { return "F1 \(F1Formatting.countdown(to: next.startAt, from: now, compact: true))" }
-        if let race { return "F1 \(F1Formatting.countdown(to: race.raceStartAt, from: now, compact: true))" }
+        if let next = nextMenuBarSession { return "F1 \(F1Formatting.countdown(to: next.session.startAt, from: now, compact: true))" }
         return isLoading ? "F1 …" : "F1"
     }
 
     var tooltip: String {
-        guard let race else { return errorMessage ?? "F1 Live" }
-        if let session = displayLiveSession { return "\(race.name) — \(session.name) live" }
-        if let next = race.nextSession(at: now) {
-            return "\(race.name) — \(next.name) in \(F1Formatting.countdown(to: next.startAt, from: now))"
+        if let race, let session = displayLiveSession { return "\(race.name) — \(session.name) live" }
+        if let next = nextMenuBarSession {
+            return "\(next.race.name) — \(next.session.name) in \(F1Formatting.countdown(to: next.session.startAt, from: now))"
         }
-        return race.name
+        return race?.name ?? errorMessage ?? "F1 Live"
     }
 
     func standingsView(limit: Int = 5) -> (top: [DriverStanding], favorites: [FavoriteStanding]) {
@@ -289,8 +295,39 @@ final class AppStore: ObservableObject {
 
     func tick(at time: Date = Date()) {
         now = time
+        if let data { updateDashboard(data) }
         synchronizeLiveSession()
         applyAutoLive()
+    }
+
+    private func updateDashboard(_ snapshot: DashboardData) {
+        let retainedRaceIndex = snapshot.races.firstIndex { race in
+            guard let session = race.raceSession, let key = session.sessionKey else { return false }
+            if let finishedAt = completedLiveSessions[key] {
+                return now < finishedAt.addingTimeInterval(Race.postRaceWindow)
+            }
+            // Evidence from a running feed takes precedence over the timetable.
+            return liveSessionKey == key && (live.lastUpdateAt != nil || live.status.at != nil)
+                && race.liveFeedSession(at: now)?.sessionKey == key
+        }
+        let index = retainedRaceIndex ?? F1API.currentRaceIndex(in: snapshot.races, at: now, completedSessions: completedLiveSessions)
+        let selectedRace = snapshot.races.indices.contains(index) ? snapshot.races[index] : nil
+        if index == snapshot.raceIndex {
+            data = snapshot
+        } else {
+            let previous = data?.race?.id == selectedRace?.id ? data : nil
+            data = DashboardData(races: snapshot.races, raceIndex: index, standings: snapshot.standings,
+                                 qualifying: previous?.qualifying, raceDistance: previous?.raceDistance,
+                                 stale: snapshot.stale, lastUpdatedAt: snapshot.lastUpdatedAt,
+                                 liveUnavailableReason: snapshot.liveUnavailableReason)
+        }
+        if selectedRace?.id != lastRaceID {
+            lastRaceID = selectedRace?.id
+            manualLiveChoice = false
+            if selectedRace?.raceSession?.sessionKey == nil || selectedRace?.raceSession?.sessionKey != liveSessionKey {
+                liveMode = false
+            }
+        }
     }
 
     private func synchronizeLiveSession() {
@@ -304,6 +341,7 @@ final class AppStore: ObservableObject {
     private func applyAutoLive() {
         guard settings.autoLive, !manualLiveChoice else { return }
         liveMode = openF1Account.hasCredentials && activeFeedSession?.key == "race"
+            && activeFeedSession?.sessionKey == race?.raceSession?.sessionKey
     }
 
     private func settingsDidChange() {
@@ -351,6 +389,7 @@ final class AppStore: ObservableObject {
                 // post-race buffer cannot reset it and restart the same feed.
                 completedLiveSessions[key] = completedLiveSessions[key] ?? finishedAt
             }
+            if let data { updateDashboard(data) }
             liveError = batch.warning
             await openF1Account.refreshStatus()
         } catch is CancellationError {
